@@ -1,0 +1,5 @@
+
+{
+  "name": "Postgres Code Query Tool",
+  "description": "A local web-based utility to query PostgreSQL databases for product codes, manage multiple connections, and export results to CSV with date-range filtering."
+}

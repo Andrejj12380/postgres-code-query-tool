@@ -1,0 +1,39 @@
+{
+  "name": "postgres-code-query-tool",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "dev:server": "nodemon --watch server --exec node server/index.js",
+    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev\" --kill-others",
+    "build:web": "vite build",
+    "build:server": "esbuild server/index.js --bundle --platform=node --target=node18 --outfile=build/server.cjs --format=cjs",
+    "build:all": "npm run build:web && npm run build:server",
+    "package:portable": "node scripts/package-portable.cjs",
+    "package:installer": "node scripts/package-installer.cjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "pg": "^8.11.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^8.0.1",
+    "esbuild": "^0.18.0",
+    "nodemon": "^3.0.1",
+    "open": "^9.1.0",
+    "pkg": "^5.8.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
