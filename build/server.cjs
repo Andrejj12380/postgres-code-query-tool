@@ -29534,8 +29534,8 @@ var defaultSettingsFile = import_path.default.join(appSettingsDir, "settings.jso
 var SETTINGS_FILE = process.env.SETTINGS_FILE || (import_fs.default.existsSync(embeddedSettings) ? embeddedSettings : defaultSettingsFile);
 var DIST_PATH = process.env.DIST_PATH || (import_fs.default.existsSync(import_path.default.join(exeDir, "dist")) ? import_path.default.join(exeDir, "dist") : import_path.default.resolve(process.cwd(), "dist"));
 var SETTINGS_TARGETS = [...new Set([embeddedSettings, defaultSettingsFile].filter(Boolean))];
-var DEFAULT_SETTINGS = Object.freeze({ connections: [], products: [] });
-var settingsCache = { connections: [], products: [] };
+var DEFAULT_SETTINGS = Object.freeze({ connections: [], products: [], fieldLabels: {} });
+var settingsCache = { connections: [], products: [], fieldLabels: {} };
 var settingsCacheLoaded = false;
 function normalizeSettings(data) {
   if (!data || typeof data !== "object") {
@@ -29543,7 +29543,8 @@ function normalizeSettings(data) {
   }
   const normalized = {
     connections: Array.isArray(data.connections) ? data.connections : [],
-    products: Array.isArray(data.products) ? data.products : []
+    products: Array.isArray(data.products) ? data.products : [],
+    fieldLabels: data.fieldLabels && typeof data.fieldLabels === "object" ? data.fieldLabels : {}
   };
   return normalized;
 }
@@ -29624,7 +29625,7 @@ async function writeSettingsToTargets(payload) {
   for (const target of SETTINGS_TARGETS) {
     try {
       await safeWriteJson(target, json);
-      logToFile(`Settings persisted to ${target} (connections=${payload?.connections?.length ?? 0}, products=${payload?.products?.length ?? 0})`);
+      logToFile(`Settings persisted to ${target} (conns=${payload?.connections?.length ?? 0}, prods=${payload?.products?.length ?? 0}, labels=${Object.keys(payload?.fieldLabels ?? {}).length})`);
       if (!primaryPath)
         primaryPath = target;
       attempts.push({ path: target, ok: true });
@@ -29701,7 +29702,7 @@ async function loadSettingsFromTargets() {
   const raw = await import_promises.default.readFile(selectedPath, "utf-8");
   const data = JSON.parse(raw);
   await syncEmbeddedSettings(data, selectedPath);
-  logToFile(`Settings loaded from ${selectedPath} (connections=${Array.isArray(data?.connections) ? data.connections.length : "n/a"}, products=${Array.isArray(data?.products) ? data.products.length : "n/a"})`);
+  logToFile(`Settings loaded from ${selectedPath} (conns=${data?.connections?.length}, prods=${data?.products?.length}, labels=${Object.keys(data?.fieldLabels ?? {}).length})`);
   return { data: normalizeSettings(data), path: selectedPath };
 }
 async function refreshSettingsCache() {
@@ -29887,7 +29888,8 @@ app.post("/api/summary", async (req, res) => {
   }
 });
 app.post("/api/full", async (req, res) => {
-  const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll } = req.body;
+  const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, onlyNew, markAsExported } = req.body;
+  console.log("[/api/full] Request received:", { onlyNew, markAsExported, columnsCount: columns?.length });
   if (!connection || !startDate || !dateField)
     return res.status(400).send("Missing parameters");
   if (!validateDateField(dateField))
@@ -29907,13 +29909,65 @@ app.post("/api/full", async (req, res) => {
     params.push(`%${selectedGtin}%`);
     where = `code LIKE $${params.length} AND ` + where;
   }
+  if (onlyNew) {
+    where = `status = 1 AND ` + where;
+  }
   const lim = Number(limit) || 1e4;
+  const ALLOWED_COLUMNS = [
+    "id",
+    "dtime_ins",
+    "code",
+    "status",
+    "dtime_status",
+    "grcode",
+    "dtime_grcode",
+    "sscc",
+    "dtime_sscc",
+    "production_date"
+  ];
+  let selectClause = "*";
+  let requestedId = true;
+  if (Array.isArray(columns) && columns.length > 0) {
+    const validColumns = columns.filter((c) => ALLOWED_COLUMNS.includes(c));
+    requestedId = validColumns.includes("id");
+    if (validColumns.length > 0) {
+      if (markAsExported && !requestedId) {
+        validColumns.push("id");
+      }
+      selectClause = validColumns.join(", ");
+    }
+  }
   try {
     const client = await connectWithFallback(connection);
-    const sql = `SELECT * FROM codes WHERE ${where} LIMIT ${lim};`;
+    const sql = `SELECT ${selectClause} FROM codes WHERE ${where} LIMIT ${lim};`;
     const result = await client.query(sql, params);
+    if (result.rows.length > 0) {
+      console.log("[/api/full] Sample row structure:", Object.keys(result.rows[0]));
+    }
+    if (markAsExported && result.rows.length > 0) {
+      const ids = result.rows.map((r) => r.id).filter((val) => val !== void 0 && val !== null);
+      console.log(`[/api/full] Found ${result.rows.length} rows, extracted ${ids.length} valid IDs`);
+      if (ids.length > 0) {
+        try {
+          const updateRes = await client.query("UPDATE codes SET status = 9, dtime_status = NOW() WHERE id = ANY($1)", [ids]);
+          console.log(`[/api/full] Update success: changed ${updateRes.rowCount} rows`);
+          logToFile(`Updated status to 9 for ${ids.length} records`);
+        } catch (updateErr) {
+          console.error("[/api/full] Status update failed:", updateErr);
+          logToFile(`Status update failed: ${updateErr?.message || updateErr}`);
+        }
+      }
+    }
     await client.end();
-    res.json(result.rows);
+    if (markAsExported && !requestedId && Array.isArray(columns) && columns.length > 0) {
+      const finalRows = result.rows.map((row) => {
+        const { id, ...rest } = row;
+        return rest;
+      });
+      res.json(finalRows);
+    } else {
+      res.json(result.rows);
+    }
   } catch (err) {
     console.error("Query error", err);
     res.status(500).send(err?.message || "Query error");

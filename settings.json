@@ -1,0 +1,35 @@
+{
+  "connections": [
+    {
+      "id": "4e8afb1c-26bb-4ee4-b1a9-a1d326a432c2",
+      "name": "456",
+      "host": "192.168.1.130",
+      "port": 5432,
+      "user": "postgres",
+      "database": "marking",
+      "password": "postgres"
+    },
+    {
+      "id": "025d8dbb-beb6-424f-9af5-f2f91c053d1f",
+      "name": "Локальный",
+      "host": "localhost",
+      "port": 5432,
+      "user": "postgres",
+      "database": "marking",
+      "password": "postgres"
+    }
+  ],
+  "products": [
+    {
+      "id": "bd2833d5-8da8-4d8d-b37a-4be447161a96",
+      "name": "1",
+      "gtin": "04607061494715"
+    },
+    {
+      "id": "7d80090c-c481-47c0-bd20-978f9eb7bc08",
+      "name": "2",
+      "gtin": "04605543012044"
+    }
+  ],
+  "fieldLabels": {}
+}

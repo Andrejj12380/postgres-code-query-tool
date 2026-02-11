@@ -36,6 +36,11 @@ UninstPage uninstConfirm
 UninstPage instfiles
 
 Section "Install"
+  ; Kill existing process before installing to avoid "Can't write" error
+  DetailPrint "Stopping existing service..."
+  nsExec::Exec 'taskkill /F /IM postgres-tool.exe /T'
+  Sleep 1000
+
   SetOutPath "$INSTDIR"
   File /r "${SOURCE_DIR}\*.*"
 
@@ -44,9 +49,12 @@ Section "Install"
   Pop $0
 
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"
-  CreateShortCut "$SMPROGRAMS\${APP_NAME}\🗄️ ${APP_NAME}.lnk" "$INSTDIR\start-hidden.vbs"
-  CreateShortCut "$SMPROGRAMS\${APP_NAME}\🛑 Stop Service.lnk" "$INSTDIR\stop.bat"
-  CreateShortCut "$DESKTOP\🗄️ ${APP_NAME}.lnk" "$INSTDIR\start-hidden.vbs"
+  ; Main app shortcuts with custom icon
+  CreateShortCut "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk" "$INSTDIR\start-hidden.vbs" "" "$INSTDIR\icons\app.ico"
+  CreateShortCut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\start-hidden.vbs" "" "$INSTDIR\icons\app.ico"
+
+  ; Stop service shortcut (no custom icon)
+  CreateShortCut "$SMPROGRAMS\${APP_NAME}\Stop Service.lnk" "$INSTDIR\stop.bat"
 
   WriteRegStr HKCU "Software\${APP_ID}" "InstallDir" "$INSTDIR"
 
@@ -66,9 +74,9 @@ Section "Uninstall"
     MessageBox MB_OKCANCEL "Остановить запущенный сервис?" IDOK +2
     ExecWait '"$INSTDIR\stop.bat"'
 
-  Delete "$DESKTOP\🗄️ ${APP_NAME}.lnk"
-  Delete "$SMPROGRAMS\${APP_NAME}\🗄️ ${APP_NAME}.lnk"
-  Delete "$SMPROGRAMS\${APP_NAME}\🛑 Stop Service.lnk"
+  Delete "$DESKTOP\${APP_NAME}.lnk"
+  Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
+  Delete "$SMPROGRAMS\${APP_NAME}\Stop Service.lnk"
   RMDir "$SMPROGRAMS\${APP_NAME}"
 
   Delete "$INSTDIR\uninstall.exe"

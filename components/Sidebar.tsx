@@ -12,6 +12,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
     { id: ViewMode.DASHBOARD, label: 'Поиск и Отчеты', icon: '📊' },
     { id: ViewMode.CONNECTIONS, label: 'Базы данных', icon: '🔌' },
     { id: ViewMode.PRODUCTS, label: 'Продукция', icon: '📦' },
+    { id: ViewMode.FIELD_NAMES, label: 'Названия полей', icon: '🏷️' },
   ];
 
   return (
@@ -25,11 +26,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
           <button
             key={item.id}
             onClick={() => setActiveView(item.id)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-              activeView === item.id 
-                ? 'bg-blue-600 text-white shadow-lg' 
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${activeView === item.id
+                ? 'bg-blue-600 text-white shadow-lg'
                 : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-            }`}
+              }`}
           >
             <span className="text-xl">{item.icon}</span>
             <span className="font-medium">{item.label}</span>

@@ -1,20 +1,23 @@
 
 import React, { useState, useRef } from 'react';
-import { DbConnection, Product, QueryResult, DateField } from '../types';
-import { generateSqlQuery, exportToCsv, exportResultsToExcel } from '../services/dbService';
+import { DbConnection, Product, QueryResult, DateField, ALL_CODE_FIELDS, FullCodeRecord } from '../types';
+import { generateSqlQuery, exportToCsv, exportResultsToExcel, exportToExcel } from '../services/dbService';
 
 interface DashboardProps {
   connections: DbConnection[];
   products: Product[];
+  fieldLabels: Record<string, string>;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
+const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabels = {} }) => {
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [selectedProductGtin, setSelectedProductGtin] = useState<string>('all');
   const [dateField, setDateField] = useState<DateField>('production_date');
   const [startDate, setStartDate] = useState<Date | null>(new Date());
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [isRange, setIsRange] = useState(false);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(ALL_CODE_FIELDS.map(f => f.key));
+  const [onlyNew, setOnlyNew] = useState(false);
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -115,15 +118,20 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
     }
   };
 
-  const handleExcelExport = () => {
+  const handleSummaryExcelExport = () => {
     if (results.length === 0) return;
     const filename = `summary_${selectedProductGtin}_${formatDate(startDate)}`;
     exportResultsToExcel(results, totalCount, filename);
   };
 
-  const handleExport = async () => {
+  const handleFullExport = async (format: 'csv' | 'excel') => {
     if (!selectedDb || results.length === 0) return;
-    
+
+    if (selectedColumns.length === 0) {
+      alert('Выберите хотя бы одно поле для выгрузки');
+      return;
+    }
+
     const conn = connections.find(c => c.id === selectedDb);
     if (!conn) {
       alert('Подключение не найдено');
@@ -147,7 +155,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
           endDate: isRange ? formatDate(endDate) : null,
           dateField,
           limit: Math.min(totalCount, 10000),
-          exportAll: true
+          exportAll: true,
+          columns: selectedColumns,
+          onlyNew,
+          markAsExported: onlyNew
         })
       });
 
@@ -158,12 +169,37 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
 
       const records = await resp.json() as any[];
       const filename = `export_${selectedProductGtin}_${formatDate(startDate)}`;
-      exportToCsv(records, filename);
+
+      if (format === 'excel') {
+        const columnMap = ALL_CODE_FIELDS.reduce((acc, field) => {
+          acc[field.key] = fieldLabels[field.key] || field.label;
+          return acc;
+        }, {} as { [key: string]: string });
+        exportToExcel(records, filename, columnMap);
+      } else {
+        exportToCsv(records, filename);
+      }
     } catch (err) {
       console.error(err);
       alert('Ошибка при выгрузке: ' + (err instanceof Error ? err.message : ''));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const toggleColumn = (key: string) => {
+    if (selectedColumns.includes(key)) {
+      setSelectedColumns(selectedColumns.filter(c => c !== key));
+    } else {
+      setSelectedColumns([...selectedColumns, key]);
+    }
+  };
+
+  const toggleAllColumns = () => {
+    if (selectedColumns.length === ALL_CODE_FIELDS.length) {
+      setSelectedColumns([]);
+    } else {
+      setSelectedColumns(ALL_CODE_FIELDS.map(f => f.key));
     }
   };
 
@@ -176,7 +212,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
         {/* Step 1: DB */}
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">1. База данных</label>
-          <select 
+          <select
             className="w-full border border-gray-300 rounded-lg p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
             value={selectedDb}
             onChange={e => setSelectedDb(e.target.value)}
@@ -191,7 +227,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
         {/* Step 2: Product */}
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">2. Продукция</label>
-          <select 
+          <select
             className="w-full border border-gray-300 rounded-lg p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
             value={selectedProductGtin}
             onChange={e => setSelectedProductGtin(e.target.value)}
@@ -207,13 +243,13 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
         <div className="space-y-2">
           <label className="text-sm font-semibold text-gray-700">3. Поле даты</label>
           <div className="flex gap-4 p-1 bg-gray-100 rounded-lg">
-            <button 
+            <button
               onClick={() => setDateField('production_date')}
               className={`flex-1 py-1 px-3 rounded-md text-sm font-medium transition-all ${dateField === 'production_date' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
             >
               Production Date
             </button>
-            <button 
+            <button
               onClick={() => setDateField('dtime_ins')}
               className={`flex-1 py-1 px-3 rounded-md text-sm font-medium transition-all ${dateField === 'dtime_ins' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}
             >
@@ -226,64 +262,64 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
         <div className="space-y-2 md:col-span-2">
           <label className="text-sm font-semibold text-gray-700">4. Период (выбор календарем или ввод вручную)</label>
           <div className="flex flex-wrap items-end gap-4">
-             <div className="flex flex-col gap-1 relative group">
-                <span className="text-[10px] uppercase text-gray-400 font-bold">От / Дата</span>
+            <div className="flex flex-col gap-1 relative group">
+              <span className="text-[10px] uppercase text-gray-400 font-bold">От / Дата</span>
+              <div className="relative">
+                <div onClick={() => startInputRef.current?.focus()} className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 cursor-pointer">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="Refine 8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <input
+                  ref={startInputRef}
+                  type="date"
+                  className="border border-gray-300 rounded-lg p-2 pl-9 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors min-w-[200px] cursor-pointer"
+                  value={formatDate(startDate)}
+                  onChange={e => setStartDate(e.target.value ? new Date(e.target.value) : null)}
+                  title="Выберите дату или введите её"
+                />
+              </div>
+            </div>
+
+            {isRange && (
+              <div className="flex flex-col gap-1 relative animate-fadeIn">
+                <span className="text-[10px] uppercase text-gray-400 font-bold">До</span>
                 <div className="relative">
-                    <div onClick={() => startInputRef.current?.focus()} className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 cursor-pointer">
+                  <div onClick={() => endInputRef.current?.focus()} className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 cursor-pointer">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="Refine 8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
                   <input
-                      ref={startInputRef}
-                      type="date"
-                      className="border border-gray-300 rounded-lg p-2 pl-9 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors min-w-[200px] cursor-pointer"
-                      value={formatDate(startDate)}
-                      onChange={e => setStartDate(e.target.value ? new Date(e.target.value) : null)}
-                      title="Выберите дату или введите её"
+                    ref={endInputRef}
+                    type="date"
+                    className="border border-gray-300 rounded-lg p-2 pl-9 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors min-w-[200px] cursor-pointer"
+                    value={formatDate(endDate)}
+                    onChange={e => setEndDate(e.target.value ? new Date(e.target.value) : null)}
+                    title="Выберите дату или введите её"
                   />
                 </div>
-             </div>
-             
-             {isRange && (
-               <div className="flex flex-col gap-1 relative animate-fadeIn">
-                 <span className="text-[10px] uppercase text-gray-400 font-bold">До</span>
-                 <div className="relative">
-                    <div onClick={() => endInputRef.current?.focus()} className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 cursor-pointer">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="Refine 8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <input
-                        ref={endInputRef}
-                        type="date"
-                        className="border border-gray-300 rounded-lg p-2 pl-9 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors min-w-[200px] cursor-pointer"
-                        value={formatDate(endDate)}
-                        onChange={e => setEndDate(e.target.value ? new Date(e.target.value) : null)}
-                        title="Выберите дату или введите её"
-                    />
-                 </div>
-               </div>
-             )}
+              </div>
+            )}
 
-             <div className="flex items-center h-[42px]">
-               <label className="inline-flex items-center cursor-pointer group">
-                 <input 
-                    type="checkbox" 
-                    className="sr-only peer" 
-                    checked={isRange}
-                    onChange={e => setIsRange(e.target.checked)}
-                 />
-                 <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                 <span className="ms-3 text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">Диапазон</span>
-               </label>
-             </div>
+            <div className="flex items-center h-[42px]">
+              <label className="inline-flex items-center cursor-pointer group">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={isRange}
+                  onChange={e => setIsRange(e.target.checked)}
+                />
+                <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                <span className="ms-3 text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">Диапазон</span>
+              </label>
+            </div>
           </div>
         </div>
 
         {/* Action button */}
         <div className="flex items-end md:col-span-1">
-          <button 
+          <button
             disabled={isLoading}
             onClick={handleQuery}
             className={`w-full h-[42px] bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${isLoading ? 'opacity-50 cursor-not-allowed shadow-inner' : 'shadow-md active:scale-95'}`}
@@ -315,6 +351,44 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
         </div>
       )}
 
+      {/* Column Selection Card */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-gray-700">Настройки выгрузки (поля)</h3>
+          <button
+            onClick={toggleAllColumns}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            {selectedColumns.length === ALL_CODE_FIELDS.length ? 'Снять выделение' : 'Выбрать все'}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {ALL_CODE_FIELDS.map(field => (
+            <label key={field.key} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors">
+              <input
+                type="checkbox"
+                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-gray-300"
+                checked={selectedColumns.includes(field.key)}
+                onChange={() => toggleColumn(field.key)}
+              />
+              <span className="text-sm text-gray-700">{fieldLabels[field.key] || field.label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <label className="inline-flex items-center cursor-pointer group">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={onlyNew}
+              onChange={e => setOnlyNew(e.target.checked)}
+            />
+            <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            <span className="ms-3 text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">Только новые (невыгруженные)</span>
+          </label>
+        </div>
+      </div>
+
       {/* Results Table */}
       {results.length > 0 ? (
         <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden animate-slideUp">
@@ -324,25 +398,35 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products }) => {
               <h3 className="font-bold text-gray-700 uppercase text-xs tracking-wider">Результаты поиска</h3>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button 
-                onClick={handleExport}
+              <button
+                onClick={() => handleFullExport('csv')}
                 disabled={isLoading}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Выгрузить в CSV
+                Выгрузить детализацию (CSV)
               </button>
               <button
-                onClick={handleExcelExport}
+                onClick={() => handleFullExport('excel')}
                 disabled={isLoading}
-                className="bg-lime-600 hover:bg-lime-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8m12 0a8 8 0 11-16 0 8 8 0 0116 0z" />
                 </svg>
-                Выгрузить в Excel
+                Выгрузить детализацию (Excel)
+              </button>
+              <button
+                onClick={handleSummaryExcelExport}
+                disabled={isLoading}
+                className="bg-lime-600 hover:bg-lime-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-50"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Скачать сводку
               </button>
             </div>
           </div>

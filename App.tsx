@@ -4,12 +4,14 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import ConnectionsManager from './components/ConnectionsManager';
 import ProductsManager from './components/ProductsManager';
+import FieldLabelsEditor from './components/FieldLabelsEditor';
 import { ViewMode, DbConnection, Product } from './types';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.DASHBOARD);
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -92,6 +94,7 @@ const App: React.FC = () => {
         if (cancelled) return;
         setConnections(json.connections || []);
         setProducts(json.products || []);
+        setFieldLabels(json.fieldLabels || {});
         setIsInitialized(true);
       } catch (e) {
         if (cancelled) return;
@@ -120,7 +123,7 @@ const App: React.FC = () => {
         await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ connections, products })
+          body: JSON.stringify({ connections, products, fieldLabels })
         });
       } catch (e) {
         console.warn('Cannot persist settings to server', e);
@@ -128,18 +131,20 @@ const App: React.FC = () => {
     };
 
     save();
-  }, [connections, products, isInitialized]);
+  }, [connections, products, fieldLabels, isInitialized]);
 
   const renderContent = () => {
     switch (activeView) {
       case ViewMode.DASHBOARD:
-        return <Dashboard connections={connections} products={products} />;
+        return <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />;
       case ViewMode.CONNECTIONS:
         return <ConnectionsManager connections={connections} setConnections={setConnections} />;
       case ViewMode.PRODUCTS:
         return <ProductsManager products={products} setProducts={setProducts} />;
+      case ViewMode.FIELD_NAMES:
+        return <FieldLabelsEditor fieldLabels={fieldLabels} onSave={(labels) => setFieldLabels(labels)} />;
       default:
-        return <Dashboard connections={connections} products={products} />;
+        return <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />;
     }
   };
 

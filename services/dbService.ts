@@ -44,11 +44,11 @@ export const generateSqlQuery = (
   countOnly: boolean = false
 ): string => {
   const selectClause = countOnly ? 'SELECT count(*)' : 'SELECT *';
-  
+
   // Logic from prompt:
   // IF product selected: WHERE code LIKE (gtin) AND date >= (start) [AND date <= (end)]
   // IF all selected: WHERE date >= (start) [AND date <= (end)]
-  
+
   let whereClause = "";
   if (endDate) {
     whereClause = `${dateField}::date >= '${startDate}' AND ${dateField}::date <= '${endDate}'`;
@@ -74,11 +74,11 @@ export const mockFetchSummary = async (
   await new Promise(r => setTimeout(r, 600));
 
   const itemsToProcess = gtin === 'all' ? products : products.filter(p => p.gtin === gtin);
-  
+
   return itemsToProcess.map(p => ({
     productName: p.name,
     gtin: p.gtin,
-    count: getStableCount(p.gtin, startDate + (endDate || '')) 
+    count: getStableCount(p.gtin, startDate + (endDate || ''))
   }));
 };
 
@@ -111,10 +111,30 @@ export const exportToCsv = (data: FullCodeRecord[], filename: string) => {
   document.body.removeChild(link);
 };
 
+export const exportToExcel = (data: any[], filename: string, columnMap?: { [key: string]: string }) => {
+  // If columnMap is provided, rename keys to labels
+  let processedData = data;
+  if (columnMap) {
+    processedData = data.map(item => {
+      const newItem: any = {};
+      Object.keys(item).forEach(key => {
+        const label = columnMap[key] || key;
+        newItem[label] = item[key];
+      });
+      return newItem;
+    });
+  }
+
+  const worksheet = XLSX.utils.json_to_sheet(processedData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Export');
+  XLSX.writeFile(workbook, `${filename}.xlsx`);
+};
+
 export const mockFetchFullRecords = async (gtin: string | 'all', count: number, date: string): Promise<FullCodeRecord[]> => {
   const records: FullCodeRecord[] = [];
   const gtinBase = gtin === 'all' ? '04600000000000' : gtin;
-  
+
   for (let i = 0; i < Math.min(count, 1000); i++) {
     const id = 64262 + i;
     // We use exactly the queried date for the records as requested

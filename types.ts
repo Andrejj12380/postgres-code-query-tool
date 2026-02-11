@@ -9,6 +9,12 @@ export interface DbConnection {
   database: string;
 }
 
+export interface Settings {
+  connections: DbConnection[];
+  products: Product[];
+  fieldLabels?: Record<string, string>;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -37,7 +43,21 @@ export interface FullCodeRecord {
 export enum ViewMode {
   DASHBOARD = 'dashboard',
   CONNECTIONS = 'connections',
-  PRODUCTS = 'products'
+  PRODUCTS = 'products',
+  FIELD_NAMES = 'field_names'
 }
 
 export type DateField = 'production_date' | 'dtime_ins';
+
+export const ALL_CODE_FIELDS: { key: keyof FullCodeRecord; label: string }[] = [
+  { key: 'id', label: 'ID' },
+  { key: 'dtime_ins', label: 'Дата вставки (dtime_ins)' },
+  { key: 'code', label: 'Код (code)' },
+  { key: 'status', label: 'Статус (status)' },
+  { key: 'dtime_status', label: 'Дата статуса (dtime_status)' },
+  { key: 'grcode', label: 'Grcode' },
+  { key: 'dtime_grcode', label: 'Дата Grcode' },
+  { key: 'sscc', label: 'SSCC' },
+  { key: 'dtime_sscc', label: 'Дата SSCC' },
+  { key: 'production_date', label: 'Дата производства' }
+];
