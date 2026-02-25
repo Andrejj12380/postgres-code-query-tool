@@ -52,7 +52,7 @@ function run(cmd, args, opts = {}) {
     console.log('\nInstaller готов:');
     const files = fs.readdirSync(releaseDir);
     files.forEach(file => console.log(' - ' + file));
-    console.log('\nУстановщик будет находиться в release/postgres-code-query-tool-setup.exe');
+    console.log('\nУстановщик будет находиться в installers/postgres-code-query-tool-setup.exe');
   } catch (err) {
     console.error('\nОшибка при сборке установщика:', err.message || err);
     process.exit(1);

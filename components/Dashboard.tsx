@@ -17,7 +17,9 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [isRange, setIsRange] = useState(false);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(ALL_CODE_FIELDS.map(f => f.key));
-  const [onlyNew, setOnlyNew] = useState(false);
+  const [markAsExported, setMarkAsExported] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [customStatus, setCustomStatus] = useState<string>('');
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -53,7 +55,8 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
 
     setIsLoading(true);
     try {
-      const sql = generateSqlQuery(selectedProductGtin, formatDate(startDate), isRange ? formatDate(endDate) : null, dateField, false);
+      const finalStatus = selectedStatus === 'custom' ? customStatus : selectedStatus;
+      const sql = generateSqlQuery(selectedProductGtin, formatDate(startDate), isRange ? formatDate(endDate) : null, dateField, false, finalStatus);
       setLastQuery(sql);
 
       const apiBase = (import.meta.env.VITE_API_BASE as string) || '';
@@ -67,7 +70,8 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
           selectedGtin: selectedProductGtin,
           startDate: formatDate(startDate),
           endDate: isRange ? formatDate(endDate) : null,
-          dateField
+          dateField,
+          status: finalStatus
         })
       });
 
@@ -140,8 +144,6 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
 
     setIsLoading(true);
     try {
-      const totalCount = results.reduce((acc, curr) => acc + curr.count, 0);
-
       const apiBase = (import.meta.env.VITE_API_BASE as string) || '';
       const url = apiBase ? `${apiBase}/api/full` : `/api/full`;
 
@@ -154,11 +156,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
           startDate: formatDate(startDate),
           endDate: isRange ? formatDate(endDate) : null,
           dateField,
-          limit: Math.min(totalCount, 10000),
           exportAll: true,
           columns: selectedColumns,
-          onlyNew,
-          markAsExported: onlyNew
+          markAsExported,
+          status: selectedStatus === 'custom' ? customStatus : selectedStatus
         })
       });
 
@@ -168,16 +169,20 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
       }
 
       const records = await resp.json() as any[];
+      if (records.length === 0) {
+        alert('Нет подходящих кодов для выгрузки (проверьте фильтр "Только новые" или выбранный период)');
+        return;
+      }
       const filename = `export_${selectedProductGtin}_${formatDate(startDate)}`;
+      const columnMap = ALL_CODE_FIELDS.reduce((acc, field) => {
+        acc[field.key] = fieldLabels[field.key] || field.label;
+        return acc;
+      }, {} as { [key: string]: string });
 
       if (format === 'excel') {
-        const columnMap = ALL_CODE_FIELDS.reduce((acc, field) => {
-          acc[field.key] = fieldLabels[field.key] || field.label;
-          return acc;
-        }, {} as { [key: string]: string });
         exportToExcel(records, filename, columnMap);
       } else {
-        exportToCsv(records, filename);
+        exportToCsv(records, filename, columnMap);
       }
     } catch (err) {
       console.error(err);
@@ -208,9 +213,9 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
       <h2 className="text-2xl font-bold mb-6">Запрос данных</h2>
 
       {/* Filter Card */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-6" data-tour="dashboard-filter-card">
         {/* Step 1: DB */}
-        <div className="space-y-2">
+        <div className="space-y-2" data-tour="dashboard-db-select">
           <label className="text-sm font-semibold text-gray-700">1. База данных</label>
           <select
             className="w-full border border-gray-300 rounded-lg p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
@@ -225,7 +230,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
         </div>
 
         {/* Step 2: Product */}
-        <div className="space-y-2">
+        <div className="space-y-2" data-tour="dashboard-product-select">
           <label className="text-sm font-semibold text-gray-700">2. Продукция</label>
           <select
             className="w-full border border-gray-300 rounded-lg p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
@@ -240,7 +245,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
         </div>
 
         {/* Step 3: Date Field */}
-        <div className="space-y-2">
+        <div className="space-y-2" data-tour="dashboard-date-field">
           <label className="text-sm font-semibold text-gray-700">3. Поле даты</label>
           <div className="flex gap-4 p-1 bg-gray-100 rounded-lg">
             <button
@@ -259,7 +264,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
         </div>
 
         {/* Step 4: Dates */}
-        <div className="space-y-2 md:col-span-2">
+        <div className="space-y-2 md:col-span-2" data-tour="dashboard-date-range">
           <label className="text-sm font-semibold text-gray-700">4. Период (выбор календарем или ввод вручную)</label>
           <div className="flex flex-wrap items-end gap-4">
             <div className="flex flex-col gap-1 relative group">
@@ -317,8 +322,34 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
           </div>
         </div>
 
+        {/* Step 5: Status */}
+        <div className="space-y-2" data-tour="dashboard-status-select">
+          <label className="text-sm font-semibold text-gray-700">5. Статус кода</label>
+          <div className="flex flex-col gap-2">
+            <select
+              className="w-full border border-gray-300 rounded-lg p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+              value={selectedStatus}
+              onChange={e => setSelectedStatus(e.target.value)}
+            >
+              <option value="all">Все статусы</option>
+              <option value="1">1 - Новые</option>
+              <option value="9">9 - Выгруженные</option>
+              <option value="custom">Другой...</option>
+            </select>
+            {selectedStatus === 'custom' && (
+              <input
+                type="text"
+                placeholder="Введите статус..."
+                className="w-full border border-gray-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors animate-fadeIn"
+                value={customStatus}
+                onChange={e => setCustomStatus(e.target.value)}
+              />
+            )}
+          </div>
+        </div>
+
         {/* Action button */}
-        <div className="flex items-end md:col-span-1">
+        <div className="flex items-end md:col-span-1" data-tour="dashboard-query-btn">
           <button
             disabled={isLoading}
             onClick={handleQuery}
@@ -352,7 +383,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
       )}
 
       {/* Column Selection Card */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn" data-tour="dashboard-columns">
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-gray-700">Настройки выгрузки (поля)</h3>
           <button
@@ -375,16 +406,16 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
             </label>
           ))}
         </div>
-        <div className="mt-6 pt-4 border-t border-gray-200">
+        <div className="mt-6 pt-4 border-t border-gray-200" data-tour="dashboard-mark-exported">
           <label className="inline-flex items-center cursor-pointer group">
             <input
               type="checkbox"
               className="sr-only peer"
-              checked={onlyNew}
-              onChange={e => setOnlyNew(e.target.checked)}
+              checked={markAsExported}
+              onChange={e => setMarkAsExported(e.target.checked)}
             />
             <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            <span className="ms-3 text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">Только новые (невыгруженные)</span>
+            <span className="ms-3 text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">Пометить выгруженные в БД (статус 9)</span>
           </label>
         </div>
       </div>
@@ -397,7 +428,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
               <h3 className="font-bold text-gray-700 uppercase text-xs tracking-wider">Результаты поиска</h3>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2" data-tour="dashboard-export-btns">
               <button
                 onClick={() => handleFullExport('csv')}
                 disabled={isLoading}

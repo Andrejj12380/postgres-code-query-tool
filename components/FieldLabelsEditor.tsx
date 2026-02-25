@@ -28,7 +28,7 @@ const FieldLabelsEditor: React.FC<FieldLabelsEditorProps> = ({ fieldLabels, onSa
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden animate-slideUp">
+        <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden animate-slideUp" data-tour="field-labels-editor">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                 <h3 className="font-bold text-gray-700 uppercase text-xs tracking-wider">Настройка названий полей</h3>
                 <div className="flex items-center gap-3">

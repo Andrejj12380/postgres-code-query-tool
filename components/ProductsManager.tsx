@@ -19,7 +19,7 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
 
   const handleSave = () => {
     setError('');
-    
+
     // Validation
     const gtinRegex = /^046\d{11}$/;
     if (!gtinRegex.test(gtin)) {
@@ -86,8 +86,9 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
     <div className="space-y-6 animate-fadeIn">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Список продукции</h2>
-        <button 
+        <button
           onClick={() => setIsAdding(true)}
+          data-tour="products-add-btn"
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium"
         >
           + Добавить продукт
@@ -101,8 +102,8 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Наименование (необязательно)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="Например: Молоко 3.2% 1л"
                 value={name}
@@ -111,8 +112,8 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">GTIN (14 цифр, старт с 046)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 maxLength={14}
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="04601234567890"
@@ -135,8 +136,8 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Наименование (необязательно)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="Например: Молоко 3.2% 1л"
                 value={editName}
@@ -145,8 +146,8 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">GTIN (14 цифр, старт с 046)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 maxLength={14}
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="04601234567890"

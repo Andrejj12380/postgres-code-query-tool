@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import ConnectionsManager from './components/ConnectionsManager';
 import ProductsManager from './components/ProductsManager';
 import FieldLabelsEditor from './components/FieldLabelsEditor';
+import HelpTour from './components/HelpTour';
 import { ViewMode, DbConnection, Product } from './types';
 
 const App: React.FC = () => {
@@ -12,6 +13,7 @@ const App: React.FC = () => {
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -150,12 +152,13 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} />
+      <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenHelp={() => setIsHelpOpen(true)} />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-7xl mx-auto">
           {renderContent()}
         </div>
       </main>
+      <HelpTour isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} setActiveView={setActiveView} />
     </div>
   );
 };

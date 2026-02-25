@@ -390,7 +390,7 @@ try {
 }
 
 app.post('/api/summary', async (req, res) => {
-  const { connection, selectedGtin, startDate, endDate, dateField } = req.body;
+  const { connection, selectedGtin, startDate, endDate, dateField, status } = req.body;
   if (!connection || !startDate || !dateField) return res.status(400).send('Missing parameters');
   if (!validateDateField(dateField)) return res.status(400).send('Invalid dateField');
 
@@ -415,6 +415,12 @@ app.post('/api/summary', async (req, res) => {
     where = `code LIKE $${params.length} AND ` + where;
   }
 
+  // Filter by status if provided and not 'all'
+  if (status && status !== 'all') {
+    params.push(status);
+    where = `status = $${params.length} AND ` + where;
+  }
+
   try {
     const client = await connectWithFallback(connection);
 
@@ -422,7 +428,7 @@ app.post('/api/summary', async (req, res) => {
     const paramsGtin = params.slice();
     // we will add a constant pattern param for the prefix
     paramsGtin.push(`01046%`);
-    const sqlGtin = `SELECT SUBSTRING(code FROM '01([0-9]{14})') AS gtin, COUNT(*)::int AS count FROM codes WHERE ${where} AND code LIKE $${paramsGtin.length} AND SUBSTRING(code FROM '01([0-9]{14})') IS NOT NULL GROUP BY gtin ORDER BY count DESC;`;
+    const sqlGtin = `SELECT SUBSTRING(code FROM '01([0-9]{14})') AS gtin, COUNT(*)::int AS count FROM codes WHERE ${where} AND code LIKE $${paramsGtin.length} AND SUBSTRING(code FROM '01([0-9]{14})') IS NOT NULL GROUP BY SUBSTRING(code FROM '01([0-9]{14})') ORDER BY count DESC;`;
     const gtinResult = await client.query(sqlGtin, paramsGtin);
 
     // 2) total rows in the range (all codes, regardless of prefix)
@@ -450,8 +456,8 @@ app.post('/api/summary', async (req, res) => {
 });
 
 app.post('/api/full', async (req, res) => {
-  const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, onlyNew, markAsExported } = req.body;
-  console.log('[/api/full] Request received:', { onlyNew, markAsExported, columnsCount: columns?.length });
+  const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, markAsExported, status } = req.body;
+  console.log('[/api/full] Request received:', { markAsExported, columnsCount: columns?.length });
   if (!connection || !startDate || !dateField) return res.status(400).send('Missing parameters');
   if (!validateDateField(dateField)) return res.status(400).send('Invalid dateField');
 
@@ -476,12 +482,13 @@ app.post('/api/full', async (req, res) => {
     where = `code LIKE $${params.length} AND ` + where;
   }
 
-  // Filter for status=1 if onlyNew is requested
-  if (onlyNew) {
-    where = `status = 1 AND ` + where;
+  // Filter by status if provided and not 'all'
+  if (status && status !== 'all') {
+    params.push(status);
+    where = `status = $${params.length} AND ` + where;
   }
 
-  const lim = Number(limit) || 10000; // allow larger exports by default
+  const lim = Number(limit) || null; // null means no LIMIT — fetch all matching rows
 
   // Whitelist allowed columns to prevent SQL injection
   const ALLOWED_COLUMNS = [
@@ -508,7 +515,7 @@ app.post('/api/full', async (req, res) => {
   try {
     const client = await connectWithFallback(connection);
 
-    const sql = `SELECT ${selectClause} FROM codes WHERE ${where} LIMIT ${lim};`;
+    const sql = `SELECT ${selectClause} FROM codes WHERE ${where}${lim ? ` LIMIT ${lim}` : ''};`;
     const result = await client.query(sql, params);
     if (result.rows.length > 0) {
       console.log('[/api/full] Sample row structure:', Object.keys(result.rows[0]));

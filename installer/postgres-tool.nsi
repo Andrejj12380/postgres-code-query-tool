@@ -18,7 +18,7 @@
 !endif
 
 !ifndef INSTALLER_OUTPUT
-  !define INSTALLER_OUTPUT "..\release\postgres-code-query-tool-setup.exe"
+  !define INSTALLER_OUTPUT "..\installers\postgres-code-query-tool-setup.exe"
 !endif
 
 Unicode true

@@ -41,7 +41,8 @@ export const generateSqlQuery = (
   startDate: string,
   endDate: string | null,
   dateField: DateField,
-  countOnly: boolean = false
+  countOnly: boolean = false,
+  status: string = 'all'
 ): string => {
   const selectClause = countOnly ? 'SELECT count(*)' : 'SELECT *';
 
@@ -59,6 +60,10 @@ export const generateSqlQuery = (
 
   if (selectedGtin !== 'all') {
     whereClause = `code LIKE '%${selectedGtin}%' AND ` + whereClause;
+  }
+
+  if (status !== 'all') {
+    whereClause = `status = '${status}' AND ` + whereClause;
   }
 
   return `${selectClause} FROM codes WHERE ${whereClause};`;
@@ -82,25 +87,23 @@ export const mockFetchSummary = async (
   }));
 };
 
-export const exportToCsv = (data: FullCodeRecord[], filename: string) => {
-  const headers = ["id", "dtime_ins", "code", "status", "dtime_status", "grcode", "dtime_grcode", "sscc", "dtime_sscc", "production_date"];
+export const exportToCsv = (data: any[], filename: string, columnMap?: { [key: string]: string }) => {
+  if (data.length === 0) return;
+
+  const keys = Object.keys(data[0]);
+  const headers = keys.map(k => columnMap ? (columnMap[k] || k) : k);
+
   const csvRows = [
     headers.join(','),
-    ...data.map(row => [
-      row.id,
-      `"${row.dtime_ins}"`,
-      `"${row.code}"`,
-      row.status,
-      `"${row.dtime_status}"`,
-      row.grcode || '',
-      row.dtime_grcode || '',
-      row.sscc || '',
-      row.dtime_sscc || '',
-      `"${row.production_date}"`
-    ].join(','))
+    ...data.map(row => keys.map(k => {
+      const val = row[k];
+      if (val === null || val === undefined) return '';
+      const s = String(val).replace(/"/g, '""');
+      return (s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')) ? `"${s}"` : s;
+    }).join(','))
   ];
 
-  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.setAttribute('href', url);
@@ -128,7 +131,7 @@ export const exportToExcel = (data: any[], filename: string, columnMap?: { [key:
   const worksheet = XLSX.utils.json_to_sheet(processedData);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Export');
-  XLSX.writeFile(workbook, `${filename}.xlsx`);
+  XLSX.writeFile(workbook, `${filename}.xlsx`, { bookSST: true });
 };
 
 export const mockFetchFullRecords = async (gtin: string | 'all', count: number, date: string): Promise<FullCodeRecord[]> => {

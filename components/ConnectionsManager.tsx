@@ -30,7 +30,7 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({ connections, se
 
   const handleSave = () => {
     if (!formData.name || !formData.host || !formData.database) return;
-    
+
     const newConnection: DbConnection = {
       id: crypto.randomUUID(),
       name: formData.name || '',
@@ -79,8 +79,9 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({ connections, se
     <div className="space-y-6 animate-fadeIn">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Подключения к базе данных</h2>
-        <button 
+        <button
           onClick={() => setIsAdding(true)}
+          data-tour="connections-add-btn"
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
         >
           + Новое подключение
@@ -93,67 +94,67 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({ connections, se
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Название (для списка)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={formData.name}
-                onChange={e => setFormData({...formData, name: e.target.value})}
+                onChange={e => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">IP адрес / Хост</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={formData.host}
-                onChange={e => setFormData({...formData, host: e.target.value})}
+                onChange={e => setFormData({ ...formData, host: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Порт</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={formData.port}
-                onChange={e => setFormData({...formData, port: Number(e.target.value)})}
+                onChange={e => setFormData({ ...formData, port: Number(e.target.value) })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Название БД</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={formData.database}
-                onChange={e => setFormData({...formData, database: e.target.value})}
+                onChange={e => setFormData({ ...formData, database: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Логин</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={formData.user}
-                onChange={e => setFormData({...formData, user: e.target.value})}
+                onChange={e => setFormData({ ...formData, user: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Пароль</label>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={formData.password}
-                onChange={e => setFormData({...formData, password: e.target.value})}
+                onChange={e => setFormData({ ...formData, password: e.target.value })}
               />
             </div>
           </div>
           <div className="mt-6 flex gap-2">
-            <button 
+            <button
               onClick={handleSave}
               className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-700"
             >
               Сохранить
             </button>
-            <button 
+            <button
               onClick={() => setIsAdding(false)}
               className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-medium hover:bg-gray-300"
             >
@@ -169,67 +170,67 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({ connections, se
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Название (для списка)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={editingData.name || ''}
-                onChange={e => setEditingData({...editingData, name: e.target.value})}
+                onChange={e => setEditingData({ ...editingData, name: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">IP адрес / Хост</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={editingData.host || ''}
-                onChange={e => setEditingData({...editingData, host: e.target.value})}
+                onChange={e => setEditingData({ ...editingData, host: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Порт</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={editingData.port ?? 5432}
-                onChange={e => setEditingData({...editingData, port: Number(e.target.value)})}
+                onChange={e => setEditingData({ ...editingData, port: Number(e.target.value) })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Название БД</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={editingData.database || ''}
-                onChange={e => setEditingData({...editingData, database: e.target.value})}
+                onChange={e => setEditingData({ ...editingData, database: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Логин</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={editingData.user || ''}
-                onChange={e => setEditingData({...editingData, user: e.target.value})}
+                onChange={e => setEditingData({ ...editingData, user: e.target.value })}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Пароль</label>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 className="mt-1 w-full border border-gray-300 rounded-md p-2 bg-[#F9FAFB] focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                 value={editingData.password || ''}
-                onChange={e => setEditingData({...editingData, password: e.target.value})}
+                onChange={e => setEditingData({ ...editingData, password: e.target.value })}
               />
             </div>
           </div>
           <div className="mt-6 flex gap-2">
-            <button 
+            <button
               onClick={handleEditSave}
               className="bg-amber-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-amber-700"
             >
               Обновить
             </button>
-            <button 
+            <button
               onClick={resetEditing}
               className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-medium hover:bg-gray-300"
             >
@@ -243,14 +244,14 @@ const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({ connections, se
         {connections.map(conn => (
           <div key={conn.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm relative group">
             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button 
+              <button
                 onClick={() => startEditing(conn)}
                 className="text-blue-500 p-2 hover:bg-blue-50 rounded-full"
                 title="Редактировать"
               >
                 ✏️
               </button>
-              <button 
+              <button
                 onClick={() => deleteConnection(conn.id)}
                 className="text-red-500 p-2 hover:bg-red-50 rounded-full"
                 title="Удалить"
