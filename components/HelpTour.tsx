@@ -123,6 +123,30 @@ const TOUR_STEPS: TourStep[] = [
         position: 'top',
     },
     {
+        target: 'print-db-select',
+        title: '🖨️ Вкладка Печать',
+        description:
+            'Перейдите на вкладку «Печать», чтобы посмотреть статистику оставшихся нераспечатанных кодов. Для начала, выберите базу данных и продукцию.',
+        view: ViewMode.PRINT,
+        position: 'bottom',
+    },
+    {
+        target: 'print-expiration-days',
+        title: '⏳ Срок годности',
+        description:
+            'Вы можете отфильтровать старые коды по сроку годности. Введите количество дней (например, 30), и коды старше этого возраста не попадут в статистику.',
+        view: ViewMode.PRINT,
+        position: 'bottom',
+    },
+    {
+        target: 'print-query-btn',
+        title: '📊 Запрос статистики',
+        description:
+            'Нажмите эту кнопку, чтобы получить актуальные остатки нераспечатанных кодов (статус 0). Затем вы сможете «Скачать сводку» в виде Excel-файла.',
+        view: ViewMode.PRINT,
+        position: 'top',
+    },
+    {
         target: null,
         title: '🎉 Тур завершён!',
         description:
@@ -152,7 +176,6 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
     const [highlight, setHighlight] = useState<HighlightBox | null>(null);
     const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
     const popupRef = useRef<HTMLDivElement>(null);
-    const rafRef = useRef<number | null>(null);
 
     const step = TOUR_STEPS[stepIdx];
     const isLast = stepIdx === TOUR_STEPS.length - 1;
@@ -280,7 +303,6 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
 
     return (
         <>
-            {/* Overlay */}
             <div
                 style={{ position: 'fixed', inset: 0, zIndex: 9999, pointerEvents: 'auto' }}
                 onClick={e => e.stopPropagation()}
@@ -310,7 +332,6 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
                             fill="rgba(15,23,42,0.68)"
                             mask="url(#tour-mask)"
                         />
-                        {/* Highlight border glow */}
                         <rect
                             x={highlight.left}
                             y={highlight.top}
@@ -331,13 +352,11 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
                 )}
             </div>
 
-            {/* Popup card */}
             <div
                 ref={popupRef}
                 style={{ ...popupStyle, width: 380 }}
                 className="rounded-2xl shadow-2xl border border-blue-200 bg-white overflow-hidden"
             >
-                {/* Header */}
                 <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3 flex items-center justify-between">
                     <span className="text-white text-sm font-semibold tracking-wide">
                         Шаг {stepIdx + 1} из {TOUR_STEPS.length}
@@ -351,7 +370,6 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
                     </button>
                 </div>
 
-                {/* Progress bar */}
                 <div className="h-1 bg-blue-100">
                     <div
                         className="h-1 bg-blue-500 transition-all duration-300"
@@ -359,13 +377,11 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
                     />
                 </div>
 
-                {/* Body */}
                 <div className="px-5 py-4">
                     <h3 className="text-lg font-bold text-gray-800 mb-2">{step.title}</h3>
                     <p className="text-sm text-gray-600 leading-relaxed">{step.description}</p>
                 </div>
 
-                {/* Footer */}
                 <div className="px-5 pb-4 flex items-center justify-between gap-2">
                     <button
                         onClick={onClose}
@@ -390,7 +406,6 @@ const HelpTour: React.FC<HelpTourProps> = ({ isOpen, onClose, setActiveView }) =
                     </div>
                 </div>
 
-                {/* Step dots */}
                 <div className="pb-3 flex justify-center gap-1.5">
                     {TOUR_STEPS.map((_, i) => (
                         <button

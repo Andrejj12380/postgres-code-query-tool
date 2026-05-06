@@ -191,7 +191,8 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
                   </div>
                 </td>
               </tr>
-            ))}            {products.length === 0 && (
+            ))}
+            {products.length === 0 && (
               <tr>
                 <td colSpan={3} className="px-6 py-10 text-center text-gray-500 italic">Список пуст</td>
               </tr>

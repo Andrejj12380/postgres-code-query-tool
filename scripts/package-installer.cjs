@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = process.cwd();
-const installerScript = path.resolve(root, 'installer', 'postgres-tool.nsi');
+const installerScript = path.resolve(root, 'installer', 'markview.nsi');
 const releaseDir = path.resolve(root, 'release');
 
 function checkFile(filePath, description) {
@@ -40,7 +40,7 @@ function run(cmd, args, opts = {}) {
 
     console.log('3) Проверка файлов релиза...');
     checkFile(releaseDir, 'Папка release');
-    checkFile(path.join(releaseDir, 'postgres-tool.exe'), 'Собранный exe');
+    checkFile(path.join(releaseDir, 'markview.exe'), 'Собранный exe');
     checkFile(path.join(releaseDir, 'start-hidden.vbs'), 'start-hidden.vbs');
     checkFile(path.join(releaseDir, 'stop.bat'), 'stop.bat');
     checkFile(path.join(releaseDir, 'dist'), 'dist (frontend)');
@@ -52,7 +52,7 @@ function run(cmd, args, opts = {}) {
     console.log('\nInstaller готов:');
     const files = fs.readdirSync(releaseDir);
     files.forEach(file => console.log(' - ' + file));
-    console.log('\nУстановщик будет находиться в installers/postgres-code-query-tool-setup.exe');
+    console.log('\nУстановщик будет находиться в installers/MarkView-setup.exe');
   } catch (err) {
     console.error('\nОшибка при сборке установщика:', err.message || err);
     process.exit(1);

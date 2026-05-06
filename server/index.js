@@ -56,7 +56,7 @@ const isPkg = typeof process.pkg !== 'undefined';
 const exeDir = isPkg ? path.dirname(process.execPath) : process.cwd();
 const embeddedSettings = path.join(exeDir, 'settings.json');
 const appDataDir = process.env.APPDATA || path.join(os.homedir(), '.config');
-const appSettingsDir = path.join(appDataDir, 'postgres-code-query-tool');
+const appSettingsDir = path.join(appDataDir, 'markview');
 const defaultSettingsFile = path.join(appSettingsDir, 'settings.json');
 const SETTINGS_FILE = process.env.SETTINGS_FILE || (fsSync.existsSync(embeddedSettings) ? embeddedSettings : defaultSettingsFile);
 const DIST_PATH = process.env.DIST_PATH || (fsSync.existsSync(path.join(exeDir, 'dist')) ? path.join(exeDir, 'dist') : path.resolve(process.cwd(), 'dist'));
@@ -281,7 +281,7 @@ function getCachedSettings() {
 }
 
 // Logging helper: write startup and error info to a log next to the exe (helps debugging packaged exe)
-const LOG_PATH = path.join(exeDir, 'postgres-tool.log');
+const LOG_PATH = path.join(exeDir, 'markview.log');
 function logToFile(msg) {
   try { fsSync.appendFileSync(LOG_PATH, `${new Date().toISOString()} - ${msg}\n`); } catch (e) { /* best-effort only */ }
 }
@@ -290,25 +290,26 @@ function killExistingExeInstances() {
   if (!isPkg || process.platform !== 'win32') return;
   try {
     const cp = require('child_process');
-    const result = cp.spawnSync('tasklist', ['/FI', 'IMAGENAME eq postgres-tool.exe', '/FO', 'CSV', '/NH'], {
-      encoding: 'utf-8'
-    });
-    if (result.error) {
-      throw result.error;
-    }
-    const output = (result.stdout || '').trim();
-    if (!output) return;
-    const lines = output.split(/\r?\n/).filter(Boolean);
-    for (const line of lines) {
-      const parts = line.split('","').map(segment => segment.replace(/^"|"$/g, '').trim());
-      if (parts.length < 2) continue;
-      const pid = Number(parts[1]);
-      if (!Number.isFinite(pid) || pid === process.pid) continue;
-      try {
-        cp.spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-        logToFile(`Terminated existing postgres-tool.exe pid=${pid}`);
-      } catch (killErr) {
-        logToFile(`Failed to terminate postgres-tool.exe pid=${pid}: ${killErr?.message || killErr}`);
+    const exeNames = ['markview.exe', 'postgres-tool.exe'];
+    for (const name of exeNames) {
+      const result = cp.spawnSync('tasklist', ['/FI', `IMAGENAME eq ${name}`, '/FO', 'CSV', '/NH'], {
+        encoding: 'utf-8'
+      });
+      if (result.error) continue;
+      const output = (result.stdout || '').trim();
+      if (!output) continue;
+      const lines = output.split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        const parts = line.split('","').map(segment => segment.replace(/^"|"$/g, '').trim());
+        if (parts.length < 2) continue;
+        const pid = Number(parts[1]);
+        if (!Number.isFinite(pid) || pid === process.pid) continue;
+        try {
+          cp.spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+          logToFile(`Terminated existing ${name} pid=${pid}`);
+        } catch (killErr) {
+          logToFile(`Failed to terminate ${name} pid=${pid}: ${killErr?.message || killErr}`);
+        }
       }
     }
   } catch (err) {
@@ -353,7 +354,7 @@ try {
         windowsHide: true
       });
       child.unref();
-      try { fsSync.writeFileSync(path.join(exeDir, 'postgres-tool.pid'), String(child.pid)); } catch (e) { logToFile('Cannot write pid file: ' + e); }
+      try { fsSync.writeFileSync(path.join(exeDir, 'markview.pid'), String(child.pid)); } catch (e) { logToFile('Cannot write pid file: ' + e); }
       logToFile('Spawned background child pid=' + child.pid);
       // Parent exits immediately (no server started here)
       process.exit(0);
@@ -368,9 +369,9 @@ try {
 
 // If this is the child, write the pidfile and ensure it's removed on exit
 if (process.argv.includes('--child')) {
-  try { fsSync.writeFileSync(path.join(exeDir, 'postgres-tool.pid'), String(process.pid)); } catch (e) { logToFile('Cannot write pid file: ' + e); }
+  try { fsSync.writeFileSync(path.join(exeDir, 'markview.pid'), String(process.pid)); } catch (e) { logToFile('Cannot write pid file: ' + e); }
   process.on('exit', () => {
-    try { fsSync.rmSync(path.join(exeDir, 'postgres-tool.pid')); } catch (e) { /* ignore */ }
+    try { fsSync.rmSync(path.join(exeDir, 'markview.pid')); } catch (e) { /* ignore */ }
   });
 }
 
@@ -455,6 +456,48 @@ app.post('/api/summary', async (req, res) => {
   }
 });
 
+app.post('/api/print-summary', async (req, res) => {
+  const { connection, selectedGtin, expirationDays } = req.body;
+  if (!connection) return res.status(400).send('Missing parameters');
+
+  const params = [];
+  let where = 'status = 0';
+
+  if (selectedGtin && selectedGtin !== 'all') {
+    params.push(`%${selectedGtin}%`);
+    where += ` AND code LIKE $${params.length}`;
+  }
+
+  // Filter out codes older than expirationDays
+  if (expirationDays && !isNaN(expirationDays) && Number(expirationDays) > 0) {
+    params.push(Number(expirationDays));
+    where += ` AND dtime_ins >= NOW() - ($${params.length} || ' days')::interval`;
+  }
+
+  try {
+    const client = await connectWithFallback(connection);
+
+    // Filter printable_codes with status = 0
+    // Group by extracted GTIN from code where it starts with '01' followed by 14 digits
+    const paramsGtin = params.slice();
+    paramsGtin.push(`01046%`);
+    const sqlGtin = `SELECT SUBSTRING(code FROM '01([0-9]{14})') AS gtin, COUNT(*)::int AS count FROM printable_codes WHERE ${where} AND code LIKE $${paramsGtin.length} AND SUBSTRING(code FROM '01([0-9]{14})') IS NOT NULL GROUP BY SUBSTRING(code FROM '01([0-9]{14})') ORDER BY count DESC;`;
+    const gtinResult = await client.query(sqlGtin, paramsGtin);
+
+    // Total unprinted codes in the table matching the filters
+    const sqlTotal = `SELECT COUNT(*)::int AS total FROM printable_codes WHERE ${where};`;
+    const totalResult = await client.query(sqlTotal, params);
+    const totalCount = totalResult.rows[0] ? Number(totalResult.rows[0].total) : 0;
+
+    await client.end();
+
+    res.json({ rows: gtinResult.rows, totalCount });
+  } catch (err) {
+    console.error('Print summary query error', err);
+    res.status(500).send(err?.message || 'Print summary query error');
+  }
+});
+
 app.post('/api/full', async (req, res) => {
   const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, markAsExported, status } = req.body;
   console.log('[/api/full] Request received:', { markAsExported, columnsCount: columns?.length });
@@ -476,8 +519,8 @@ app.post('/api/full', async (req, res) => {
     where += `${dateField}::date = $${params.length}`;
   }
 
-  // If exportAll flag is NOT set and selectedGtin provided, apply code filter
-  if (!exportAll && selectedGtin && selectedGtin !== 'all') {
+  // If selectedGtin provided, apply code filter
+  if (selectedGtin && selectedGtin !== 'all') {
     params.push(`%${selectedGtin}%`);
     where = `code LIKE $${params.length} AND ` + where;
   }
@@ -594,8 +637,8 @@ app.get('/', (_, res) => res.send('Postgres query server is running'));
 const shouldAutoOpen = process.env.SUPPRESS_AUTO_OPEN !== '1';
 
 const startServer = async () => {
-  let port = Number(process.env.PORT) || 3000;
-  const maxAttempts = 100;
+  let port = Number(process.env.SERVER_PORT) || Number(process.env.PORT) || 3005;
+  const maxAttempts = 10;
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const serverInstance = await new Promise((resolve, reject) => {

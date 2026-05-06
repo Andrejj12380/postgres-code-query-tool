@@ -20,7 +20,7 @@ try {
 
   console.log('3) Packaging exe with pkg (Windows x64)...');
   fs.mkdirSync('release', { recursive: true });
-  execSync('npx pkg build/server.cjs --targets node18-win-x64 --output release/postgres-tool.exe', { stdio: 'inherit' });
+  execSync('npx pkg build/server.cjs --targets node18-win-x64 --output release/markview.exe', { stdio: 'inherit' });
 
   console.log('4) Copying frontend assets to release/dist...');
   const src = path.resolve('dist');
@@ -43,24 +43,24 @@ try {
   const vbs = `Set fso = CreateObject("Scripting.FileSystemObject")
 Set WshShell = CreateObject("WScript.Shell")
 scriptPath = fso.GetParentFolderName(WScript.ScriptFullName)
-exePath = fso.BuildPath(scriptPath, "postgres-tool.exe")
+exePath = fso.BuildPath(scriptPath, "markview.exe")
 WshShell.Run chr(34) & exePath & chr(34), 0, False`;
   fs.writeFileSync(path.resolve('release', 'start-hidden.vbs'), vbs, 'utf-8');
 
   const stopBat = `@echo off
-if not exist "postgres-tool.pid" (
+if not exist "markview.pid" (
   echo pid file not found
   exit /b 1
 )
-for /f %%p in (postgres-tool.pid) do taskkill /PID %%p /F || echo failed to kill %%p
-if exist postgres-tool.pid del postgres-tool.pid
+for /f %%p in (markview.pid) do taskkill /PID %%p /F || echo failed to kill %%p
+if exist markview.pid del markview.pid
 `;
   fs.writeFileSync(path.resolve('release', 'stop.bat'), stopBat, 'utf-8');
 
-  console.log('\nPortable package built: release/postgres-tool.exe');
+  console.log('\nPortable package built: release/markview.exe');
   console.log('Release folder contents:');
   console.log(fs.readdirSync(path.resolve('release')).join('\n'));
-  console.log('\nInstructions: distribute the whole release/ folder. The user can start the app without a visible console by double-clicking start-hidden.vbs (or run postgres-tool.exe which will spawn a hidden background process). Use stop.bat to stop the background process.');
+  console.log('\nInstructions: distribute the whole release/ folder. The user can start the app without a visible console by double-clicking start-hidden.vbs (or run markview.exe which will spawn a hidden background process). Use stop.bat to stop the background process.');
 } catch (err) {
   console.error('Packaging failed:', err);
   process.exit(1);

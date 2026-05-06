@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import ConnectionsManager from './components/ConnectionsManager';
 import ProductsManager from './components/ProductsManager';
 import FieldLabelsEditor from './components/FieldLabelsEditor';
+import PrintDashboard from './components/PrintDashboard';
 import HelpTour from './components/HelpTour';
 import { ViewMode, DbConnection, Product } from './types';
 
@@ -135,27 +136,26 @@ const App: React.FC = () => {
     save();
   }, [connections, products, fieldLabels, isInitialized]);
 
-  const renderContent = () => {
-    switch (activeView) {
-      case ViewMode.DASHBOARD:
-        return <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />;
-      case ViewMode.CONNECTIONS:
-        return <ConnectionsManager connections={connections} setConnections={setConnections} />;
-      case ViewMode.PRODUCTS:
-        return <ProductsManager products={products} setProducts={setProducts} />;
-      case ViewMode.FIELD_NAMES:
-        return <FieldLabelsEditor fieldLabels={fieldLabels} onSave={(labels) => setFieldLabels(labels)} />;
-      default:
-        return <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />;
-    }
-  };
-
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenHelp={() => setIsHelpOpen(true)} />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-7xl mx-auto">
-          {renderContent()}
+          <div style={{ display: activeView === ViewMode.DASHBOARD ? 'block' : 'none' }}>
+            <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />
+          </div>
+          <div style={{ display: activeView === ViewMode.CONNECTIONS ? 'block' : 'none' }}>
+            <ConnectionsManager connections={connections} setConnections={setConnections} />
+          </div>
+          <div style={{ display: activeView === ViewMode.PRODUCTS ? 'block' : 'none' }}>
+            <ProductsManager products={products} setProducts={setProducts} />
+          </div>
+          <div style={{ display: activeView === ViewMode.PRINT ? 'block' : 'none' }}>
+            <PrintDashboard connections={connections} products={products} />
+          </div>
+          <div style={{ display: activeView === ViewMode.FIELD_NAMES ? 'block' : 'none' }}>
+            <FieldLabelsEditor fieldLabels={fieldLabels} onSave={(labels) => setFieldLabels(labels)} />
+          </div>
         </div>
       </main>
       <HelpTour isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} setActiveView={setActiveView} />
