@@ -43,7 +43,7 @@ const UpdateBanner: React.FC = () => {
     try {
       const apiBase = (import.meta.env.VITE_API_BASE as string) || '';
       
-      // Start download
+      // Start download (non-blocking)
       const downloadResp = await fetch(`${apiBase}/api/download-update`, { method: 'POST' });
       if (!downloadResp.ok) throw new Error(await downloadResp.text());
 
@@ -53,6 +53,14 @@ const UpdateBanner: React.FC = () => {
           const progResp = await fetch(`${apiBase}/api/download-progress`);
           if (progResp.ok) {
             const { progress } = await progResp.json();
+            
+            if (progress === -1) {
+              setError('Ошибка при загрузке файла');
+              setStatus('available');
+              clearInterval(pollId);
+              return;
+            }
+
             setProgress(progress);
             if (progress >= 100) {
               clearInterval(pollId);
@@ -60,9 +68,9 @@ const UpdateBanner: React.FC = () => {
             }
           }
         } catch (e) {
-          clearInterval(pollId);
+          console.warn('Polling error', e);
         }
-      }, 500);
+      }, 800);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed');
@@ -73,12 +81,18 @@ const UpdateBanner: React.FC = () => {
   const applyUpdate = async () => {
     try {
       const apiBase = (import.meta.env.VITE_API_BASE as string) || '';
-      await fetch(`${apiBase}/api/apply-update`, { method: 'POST' });
+      const resp = await fetch(`${apiBase}/api/apply-update`, { method: 'POST' });
+      
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(msg || 'Не удалось запустить обновление');
+      }
+
       // The app will exit, UI will freeze or show "restarting"
       setStatus('idle');
       alert('Приложение перезагружается для установки обновления...');
     } catch (err) {
-      alert('Ошибка при запуске обновления');
+      alert('Ошибка при запуске обновления: ' + (err instanceof Error ? err.message : ''));
     }
   };
 

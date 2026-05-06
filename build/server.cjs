@@ -30145,42 +30145,40 @@ app.post("/api/download-update", async (req, res) => {
     if (!asset)
       return res.status(404).send("No executable asset found in latest release");
     const tempPath = import_path.default.join(exeDir, "markview_new.exe");
+    downloadProgress = 0;
+    res.json({ started: true });
     const file = import_fs.default.createWriteStream(tempPath);
-    import_https.default.get(asset.browser_download_url, (response) => {
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        import_https.default.get(response.headers.location, (redirectRes) => {
-          const totalSize = parseInt(redirectRes.headers["content-length"], 10);
-          let downloaded = 0;
-          redirectRes.pipe(file);
-          redirectRes.on("data", (chunk) => {
-            downloaded += chunk.length;
-            downloadProgress = Math.floor(downloaded / totalSize * 100);
-          });
-          file.on("finish", () => {
-            file.close();
-            res.json({ ok: true });
-          });
-        });
-      } else {
+    const download = (url) => {
+      import_https.default.get(url, (response) => {
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          download(response.headers.location);
+          return;
+        }
         const totalSize = parseInt(response.headers["content-length"], 10);
         let downloaded = 0;
         response.pipe(file);
         response.on("data", (chunk) => {
           downloaded += chunk.length;
-          downloadProgress = Math.floor(downloaded / totalSize * 100);
+          if (totalSize) {
+            downloadProgress = Math.floor(downloaded / totalSize * 100);
+          }
         });
         file.on("finish", () => {
           file.close();
-          res.json({ ok: true });
+          downloadProgress = 100;
         });
-      }
-    }).on("error", (err) => {
-      import_fs.default.unlink(tempPath, () => {
+      }).on("error", (err) => {
+        console.error("Download error:", err);
+        downloadProgress = -1;
+        import_fs.default.unlink(tempPath, () => {
+        });
       });
-      res.status(500).send(err.message);
-    });
+    };
+    download(asset.browser_download_url);
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error("Download start failed:", err);
+    if (!res.headersSent)
+      res.status(500).send(err.message);
   }
 });
 app.get("/api/download-progress", (req, res) => {

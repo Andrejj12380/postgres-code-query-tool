@@ -2,7 +2,7 @@
   "connections": [
     {
       "id": "4e8afb1c-26bb-4ee4-b1a9-a1d326a432c2",
-      "name": "456",
+      "name": "Линия 1",
       "host": "192.168.1.130",
       "port": 5432,
       "user": "postgres",

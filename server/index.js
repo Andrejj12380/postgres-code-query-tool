@@ -708,7 +708,7 @@ app.post('/api/settings', async (req, res) => {
 });
 
 // --- Auto-Update System ---
-const CURRENT_VERSION = '2.1.2'; // Match package.json
+const CURRENT_VERSION = '2.1.1'; // Match package.json
 const REPO_OWNER = 'Andrejj12380';
 const REPO_NAME = 'postgres-code-query-tool';
 
@@ -756,43 +756,47 @@ app.post('/api/download-update', async (req, res) => {
     if (!asset) return res.status(404).send('No executable asset found in latest release');
 
     const tempPath = path.join(exeDir, 'markview_new.exe');
-    const file = fsSync.createWriteStream(tempPath);
+    downloadProgress = 0;
     
-    https.get(asset.browser_download_url, (response) => {
-      // Handle redirects if necessary
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        https.get(response.headers.location, (redirectRes) => {
-          const totalSize = parseInt(redirectRes.headers['content-length'], 10);
-          let downloaded = 0;
-          redirectRes.pipe(file);
-          redirectRes.on('data', (chunk) => {
-            downloaded += chunk.length;
-            downloadProgress = Math.floor((downloaded / totalSize) * 100);
-          });
-          file.on('finish', () => {
-            file.close();
-            res.json({ ok: true });
-          });
-        });
-      } else {
+    // Respond immediately that we started
+    res.json({ started: true });
+
+    // Start download in "background"
+    const file = fsSync.createWriteStream(tempPath);
+    const download = (url) => {
+      https.get(url, (response) => {
+        if (response.statusCode === 302 || response.statusCode === 301) {
+          download(response.headers.location);
+          return;
+        }
+        
         const totalSize = parseInt(response.headers['content-length'], 10);
         let downloaded = 0;
+        
         response.pipe(file);
         response.on('data', (chunk) => {
           downloaded += chunk.length;
-          downloadProgress = Math.floor((downloaded / totalSize) * 100);
+          if (totalSize) {
+            downloadProgress = Math.floor((downloaded / totalSize) * 100);
+          }
         });
+
         file.on('finish', () => {
           file.close();
-          res.json({ ok: true });
+          downloadProgress = 100;
         });
-      }
-    }).on('error', (err) => {
-      fsSync.unlink(tempPath, () => {});
-      res.status(500).send(err.message);
-    });
+      }).on('error', (err) => {
+        console.error('Download error:', err);
+        downloadProgress = -1; // Indicate error
+        fsSync.unlink(tempPath, () => {});
+      });
+    };
+
+    download(asset.browser_download_url);
+    
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error('Download start failed:', err);
+    if (!res.headersSent) res.status(500).send(err.message);
   }
 });
 
