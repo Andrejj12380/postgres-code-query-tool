@@ -15,6 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenHelp
     { id: ViewMode.CONNECTIONS, label: 'Базы данных', icon: '🔌' },
     { id: ViewMode.PRODUCTS, label: 'Продукция', icon: '📦' },
     { id: ViewMode.FIELD_NAMES, label: 'Названия полей', icon: '🏷️' },
+    { id: ViewMode.MAINTENANCE, label: 'Обслуживание', icon: '🛠️' },
   ];
 
   return (

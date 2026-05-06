@@ -6,6 +6,7 @@ import ConnectionsManager from './components/ConnectionsManager';
 import ProductsManager from './components/ProductsManager';
 import FieldLabelsEditor from './components/FieldLabelsEditor';
 import PrintDashboard from './components/PrintDashboard';
+import MaintenanceDashboard from './components/MaintenanceDashboard';
 import HelpTour from './components/HelpTour';
 import { ViewMode, DbConnection, Product } from './types';
 
@@ -155,6 +156,9 @@ const App: React.FC = () => {
           </div>
           <div style={{ display: activeView === ViewMode.FIELD_NAMES ? 'block' : 'none' }}>
             <FieldLabelsEditor fieldLabels={fieldLabels} onSave={(labels) => setFieldLabels(labels)} />
+          </div>
+          <div style={{ display: activeView === ViewMode.MAINTENANCE ? 'block' : 'none' }}>
+            <MaintenanceDashboard connections={connections} products={products} />
           </div>
         </div>
       </main>

@@ -45,7 +45,8 @@ export enum ViewMode {
   CONNECTIONS = 'connections',
   PRODUCTS = 'products',
   FIELD_NAMES = 'field_names',
-  PRINT = 'print'
+  PRINT = 'print',
+  MAINTENANCE = 'maintenance'
 }
 
 export type DateField = 'production_date' | 'dtime_ins';

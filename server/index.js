@@ -499,7 +499,7 @@ app.post('/api/print-summary', async (req, res) => {
 });
 
 app.post('/api/full', async (req, res) => {
-  const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, markAsExported, status } = req.body;
+  const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, markAsExported, status, searchCode } = req.body;
   console.log('[/api/full] Request received:', { markAsExported, columnsCount: columns?.length });
   if (!connection || !startDate || !dateField) return res.status(400).send('Missing parameters');
   if (!validateDateField(dateField)) return res.status(400).send('Invalid dateField');
@@ -522,6 +522,12 @@ app.post('/api/full', async (req, res) => {
   // If selectedGtin provided, apply code filter
   if (selectedGtin && selectedGtin !== 'all') {
     params.push(`%${selectedGtin}%`);
+    where = `code LIKE $${params.length} AND ` + where;
+  }
+
+  // If searchCode provided, apply granular code filter
+  if (searchCode) {
+    params.push(`%${searchCode}%`);
     where = `code LIKE $${params.length} AND ` + where;
   }
 
@@ -595,6 +601,74 @@ app.post('/api/full', async (req, res) => {
   } catch (err) {
     console.error('Query error', err);
     res.status(500).send(err?.message || 'Query error');
+  }
+});
+
+app.post('/api/delete', async (req, res) => {
+  const { connection, selectedGtin, startDate, endDate, dateField, status, ids, searchCode } = req.body;
+  console.log('[/api/delete] Request received:', { selectedGtin, startDate, endDate, idsCount: ids?.length });
+  
+  if (!connection || !startDate || !dateField) return res.status(400).send('Missing parameters');
+  if (!validateDateField(dateField)) return res.status(400).send('Invalid dateField');
+
+  const params = [];
+  let where = '';
+
+  // date filters
+  if (endDate) {
+    params.push(startDate);
+    where += `${dateField}::date >= $${params.length}`;
+
+    params.push(endDate);
+    where += ` AND ${dateField}::date <= $${params.length}`;
+  } else {
+    params.push(startDate);
+    where += `${dateField}::date = $${params.length}`;
+  }
+
+  // product filter
+  if (selectedGtin && selectedGtin !== 'all') {
+    params.push(`%${selectedGtin}%`);
+    where = `code LIKE $${params.length} AND ` + where;
+  }
+
+  // searchCode filter
+  if (searchCode) {
+    params.push(`%${searchCode}%`);
+    where = `code LIKE $${params.length} AND ` + where;
+  }
+
+  // status filter
+  if (status && status !== 'all') {
+    params.push(status);
+    where = `status = $${params.length} AND ` + where;
+  }
+
+  // specific IDs filter
+  if (Array.isArray(ids) && ids.length > 0) {
+    params.push(ids);
+    where += ` AND id = ANY($${params.length})`;
+  }
+
+  try {
+    const client = await connectWithFallback(connection);
+    
+    // Safety check: Don't allow deletion if WHERE clause is empty (shouldn't happen with date check but let's be safe)
+    if (!where) {
+      await client.end();
+      return res.status(400).send('Empty WHERE clause');
+    }
+
+    const sql = `DELETE FROM codes WHERE ${where};`;
+    const result = await client.query(sql, params);
+    
+    await client.end();
+    
+    logToFile(`Deleted ${result.rowCount} records with filters: GTIN=${selectedGtin}, Start=${startDate}, End=${endDate}`);
+    res.json({ deletedCount: result.rowCount });
+  } catch (err) {
+    console.error('Delete error', err);
+    res.status(500).send(err?.message || 'Delete error');
   }
 });
 
