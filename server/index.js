@@ -708,7 +708,7 @@ app.post('/api/settings', async (req, res) => {
 });
 
 // --- Auto-Update System ---
-const CURRENT_VERSION = '2.1.1'; // Match package.json
+const CURRENT_VERSION = '2.1.2'; // Match package.json
 const REPO_OWNER = 'Andrejj12380';
 const REPO_NAME = 'postgres-code-query-tool';
 

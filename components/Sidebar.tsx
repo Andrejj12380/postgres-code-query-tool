@@ -21,7 +21,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenHelp
   return (
     <div className="w-64 bg-slate-900 text-white flex flex-col shadow-xl">
       <div className="p-6 border-b border-slate-800">
-        <h1 className="text-xl font-bold tracking-tight">MarkView</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold tracking-tight">MarkView</h1>
+          <span className="bg-blue-900/50 text-blue-400 text-[10px] px-2 py-0.5 rounded-full border border-blue-500/30">v2.1.2</span>
+        </div>
         <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest">Отображение отчёта</p>
       </div>
       <nav className="flex-1 mt-4 px-2 space-y-1" data-tour="sidebar-nav">
