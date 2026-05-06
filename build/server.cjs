@@ -29486,6 +29486,7 @@ var defaults = import_lib.default.defaults;
 // server/index.js
 var import_promises = __toESM(require("fs/promises"), 1);
 var import_fs = __toESM(require("fs"), 1);
+var import_https = __toESM(require("https"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_os = __toESM(require("os"), 1);
 var import_child_process = require("child_process");
@@ -30092,6 +30093,126 @@ app.post("/api/settings", async (req, res) => {
     console.error("Failed to write settings", err);
     logToFile("Settings write failed: " + (err?.stack || err));
     return res.status(500).send("Failed to write settings");
+  }
+});
+var CURRENT_VERSION = "2.1.1";
+var REPO_OWNER = "Andrejj12380";
+var REPO_NAME = "postgres-code-query-tool";
+async function getLatestRelease() {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: "api.github.com",
+      path: `/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`,
+      headers: { "User-Agent": "markview-updater" }
+    };
+    import_https.default.get(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => {
+        if (res.statusCode !== 200)
+          return reject(new Error(`GitHub API error: ${res.statusCode}`));
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on("error", reject);
+  });
+}
+app.get("/api/check-update", async (req, res) => {
+  try {
+    const latest = await getLatestRelease();
+    const latestVersion = latest.tag_name.replace(/^v/, "");
+    const updateAvailable = latestVersion !== CURRENT_VERSION;
+    res.json({
+      currentVersion: CURRENT_VERSION,
+      latestVersion,
+      updateAvailable,
+      releaseNotes: latest.body,
+      releaseUrl: latest.html_url
+    });
+  } catch (err) {
+    console.error("Update check failed:", err);
+    res.status(500).json({ error: "Failed to check for updates" });
+  }
+});
+var downloadProgress = 0;
+app.post("/api/download-update", async (req, res) => {
+  try {
+    const latest = await getLatestRelease();
+    const asset = latest.assets.find((a) => a.name.endsWith(".exe"));
+    if (!asset)
+      return res.status(404).send("No executable asset found in latest release");
+    const tempPath = import_path.default.join(exeDir, "markview_new.exe");
+    const file = import_fs.default.createWriteStream(tempPath);
+    import_https.default.get(asset.browser_download_url, (response) => {
+      if (response.statusCode === 302 || response.statusCode === 301) {
+        import_https.default.get(response.headers.location, (redirectRes) => {
+          const totalSize = parseInt(redirectRes.headers["content-length"], 10);
+          let downloaded = 0;
+          redirectRes.pipe(file);
+          redirectRes.on("data", (chunk) => {
+            downloaded += chunk.length;
+            downloadProgress = Math.floor(downloaded / totalSize * 100);
+          });
+          file.on("finish", () => {
+            file.close();
+            res.json({ ok: true });
+          });
+        });
+      } else {
+        const totalSize = parseInt(response.headers["content-length"], 10);
+        let downloaded = 0;
+        response.pipe(file);
+        response.on("data", (chunk) => {
+          downloaded += chunk.length;
+          downloadProgress = Math.floor(downloaded / totalSize * 100);
+        });
+        file.on("finish", () => {
+          file.close();
+          res.json({ ok: true });
+        });
+      }
+    }).on("error", (err) => {
+      import_fs.default.unlink(tempPath, () => {
+      });
+      res.status(500).send(err.message);
+    });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+app.get("/api/download-progress", (req, res) => {
+  res.json({ progress: downloadProgress });
+});
+app.post("/api/apply-update", (req, res) => {
+  const isDevelopment = !isPkg;
+  if (isDevelopment) {
+    return res.status(400).send("Update cannot be applied in development mode");
+  }
+  const currentExe = process.execPath;
+  const newExe = import_path.default.join(exeDir, "markview_new.exe");
+  const batchPath = import_path.default.join(exeDir, "apply_update.bat");
+  const batchContent = `@echo off
+timeout /t 2 /nobreak > nul
+if exist "${newExe}" (
+    move /y "${newExe}" "${currentExe}"
+    start "" "${currentExe}" --child
+)
+del "%~f0"
+`;
+  try {
+    import_fs.default.writeFileSync(batchPath, batchContent, "utf-8");
+    logToFile("Update script created. Exiting app to apply update...");
+    res.json({ ok: true });
+    setTimeout(() => {
+      (0, import_child_process.exec)(`start "" "${batchPath}"`, { cwd: exeDir });
+      process.exit(0);
+    }, 1e3);
+  } catch (err) {
+    console.error("Failed to apply update:", err);
+    res.status(500).send(err.message);
   }
 });
 app.get("/", (_, res) => res.send("Postgres query server is running"));
