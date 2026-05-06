@@ -8,6 +8,7 @@ import FieldLabelsEditor from './components/FieldLabelsEditor';
 import PrintDashboard from './components/PrintDashboard';
 import MaintenanceDashboard from './components/MaintenanceDashboard';
 import HelpTour from './components/HelpTour';
+import UpdateBanner from './components/UpdateBanner';
 import { ViewMode, DbConnection, Product } from './types';
 
 const App: React.FC = () => {
@@ -138,10 +139,12 @@ const App: React.FC = () => {
   }, [connections, products, fieldLabels, isInitialized]);
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenHelp={() => setIsHelpOpen(true)} />
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-7xl mx-auto">
+    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+      <UpdateBanner />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar activeView={activeView} setActiveView={setActiveView} onOpenHelp={() => setIsHelpOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-8">
+          <div className="max-w-7xl mx-auto">
           <div style={{ display: activeView === ViewMode.DASHBOARD ? 'block' : 'none' }}>
             <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />
           </div>
@@ -162,8 +165,9 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
-      <HelpTour isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} setActiveView={setActiveView} />
     </div>
+    <HelpTour isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} setActiveView={setActiveView} />
+  </div>
   );
 };
 
