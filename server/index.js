@@ -65,7 +65,9 @@ const appDataDir = process.env.APPDATA || path.join(os.homedir(), '.config');
 const appSettingsDir = path.join(appDataDir, 'markview');
 const defaultSettingsFile = path.join(appSettingsDir, 'settings.json');
 const SETTINGS_FILE = process.env.SETTINGS_FILE || (fsSync.existsSync(embeddedSettings) ? embeddedSettings : defaultSettingsFile);
-const DIST_PATH = process.env.DIST_PATH || (fsSync.existsSync(path.join(exeDir, 'dist')) ? path.join(exeDir, 'dist') : path.resolve(process.cwd(), 'dist'));
+// When in pkg, __dirname points to the snapshot root (where dist is bundled).
+// In development, we use process.cwd()/dist or ../dist depending on how it's run.
+const DIST_PATH = isPkg ? path.join(__dirname, '..', 'dist') : path.resolve(process.cwd(), 'dist');
 const SETTINGS_TARGETS = [...new Set([embeddedSettings, defaultSettingsFile].filter(Boolean))];
 
 const DEFAULT_SETTINGS = Object.freeze({ connections: [], products: [], fieldLabels: {} });

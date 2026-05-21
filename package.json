@@ -16,6 +16,11 @@
     "package:portable": "node scripts/package-portable.cjs",
     "package:installer": "node scripts/package-installer.cjs"
   },
+  "pkg": {
+    "assets": [
+      "dist/**/*"
+    ]
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
