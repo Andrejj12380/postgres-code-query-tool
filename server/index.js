@@ -851,7 +851,7 @@ del "%~f0"
     
     // Give time for response to reach client before exiting
     setTimeout(() => {
-      exec(`start "" "${batchPath}"`, { cwd: exeDir });
+      require('child_process').exec(`start "" "${batchPath}"`, { cwd: exeDir });
       process.exit(0);
     }, 1000);
   } catch (err) {
