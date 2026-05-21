@@ -29490,6 +29490,11 @@ var import_https = __toESM(require("https"), 1);
 var import_path = __toESM(require("path"), 1);
 var import_os = __toESM(require("os"), 1);
 var import_child_process = require("child_process");
+var import_module = require("module");
+var import_meta = {};
+types.setTypeParser(1082, (val) => val);
+types.setTypeParser(1114, (val) => val);
+types.setTypeParser(1184, (val) => val);
 import_dotenv.default.config();
 var app = (0, import_express.default)();
 app.use((0, import_cors.default)());
@@ -29742,7 +29747,7 @@ function killExistingExeInstances() {
   if (!isPkg || process.platform !== "win32")
     return;
   try {
-    const cp = require("child_process");
+    const cp = require2("child_process");
     const exeNames = ["markview.exe", "postgres-tool.exe"];
     for (const name of exeNames) {
       const result = cp.spawnSync("tasklist", ["/FI", `IMAGENAME eq ${name}`, "/FO", "CSV", "/NH"], {
@@ -29798,7 +29803,7 @@ function openBrowser(url) {
 try {
   killExistingExeInstances();
   if (process.platform === "win32" && !process.argv.includes("--child")) {
-    const cp = require("child_process");
+    const cp = require2("child_process");
     const spawnArgs = process.argv.slice(1).concat(["--child"]);
     try {
       const child = cp.spawn(process.execPath, spawnArgs, {
@@ -30095,7 +30100,9 @@ app.post("/api/settings", async (req, res) => {
     return res.status(500).send("Failed to write settings");
   }
 });
-var CURRENT_VERSION = "2.1.1";
+var require2 = (0, import_module.createRequire)(import_meta.url);
+var pkgInfo = require2("../package.json");
+var CURRENT_VERSION = pkgInfo.version;
 var REPO_OWNER = "Andrejj12380";
 var REPO_NAME = "postgres-code-query-tool";
 async function getLatestRelease() {

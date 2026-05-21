@@ -1,11 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { Client } from 'pg';
+import { Client, types } from 'pg';
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import https from 'https';
 import path from 'path';
+
+// Override default pg type parsers to prevent timezone conversion on dates and timestamps
+types.setTypeParser(1082, (val) => val); // date
+types.setTypeParser(1114, (val) => val); // timestamp without time zone
+types.setTypeParser(1184, (val) => val); // timestamp with time zone
 
 dotenv.config();
 
@@ -708,7 +713,18 @@ app.post('/api/settings', async (req, res) => {
 });
 
 // --- Auto-Update System ---
-const CURRENT_VERSION = '2.1.1'; // Match package.json
+let CURRENT_VERSION = '2.1.1';
+try {
+  if (process.env.APP_VERSION) {
+    CURRENT_VERSION = process.env.APP_VERSION;
+  } else {
+    // Dev mode fallback
+    const pkgPath = path.join(process.cwd(), 'package.json');
+    if (fsSync.existsSync(pkgPath)) {
+      CURRENT_VERSION = JSON.parse(fsSync.readFileSync(pkgPath, 'utf8')).version;
+    }
+  }
+} catch (e) {}
 const REPO_OWNER = 'Andrejj12380';
 const REPO_NAME = 'postgres-code-query-tool';
 
@@ -763,6 +779,11 @@ app.post('/api/download-update', async (req, res) => {
 
     // Start download in "background"
     const file = fsSync.createWriteStream(tempPath);
+    file.on('error', (err) => {
+      console.error('File write error:', err);
+      downloadProgress = -1;
+    });
+
     const download = (url) => {
       https.get(url, (response) => {
         if (response.statusCode === 302 || response.statusCode === 301) {

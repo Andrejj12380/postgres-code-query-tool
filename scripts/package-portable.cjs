@@ -15,7 +15,10 @@ try {
     platform: 'node',
     target: ['node18'],
     outfile: 'build/server.cjs',
-    format: 'cjs'
+    format: 'cjs',
+    define: {
+      'process.env.APP_VERSION': JSON.stringify(require('../package.json').version)
+    }
   });
 
   console.log('3) Packaging exe with pkg (Windows x64)...');
