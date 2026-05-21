@@ -23,7 +23,7 @@ try {
 
   console.log('3) Packaging exe with pkg (Windows x64)...');
   fs.mkdirSync('release', { recursive: true });
-  execSync('npx pkg build/server.cjs --targets node18-win-x64 --output release/markview.exe', { stdio: 'inherit' });
+  execSync('npx pkg . --targets node18-win-x64 --output release/markview.exe', { stdio: 'inherit' });
 
   console.log('4) Copying frontend assets to release/dist...');
   const src = path.resolve('dist');
