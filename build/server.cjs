@@ -30100,8 +30100,8 @@ app.post("/api/settings", async (req, res) => {
 });
 var CURRENT_VERSION = "2.1.1";
 try {
-  if ("2.1.5") {
-    CURRENT_VERSION = "2.1.5";
+  if ("2.1.7") {
+    CURRENT_VERSION = "2.1.7";
   } else {
     const pkgPath = import_path.default.join(process.cwd(), "package.json");
     if (import_fs.default.existsSync(pkgPath)) {
@@ -30223,7 +30223,14 @@ del "%~f0"
     logToFile("Update script created. Exiting app to apply update...");
     res.json({ ok: true });
     setTimeout(() => {
-      require("child_process").exec(`start "" "${batchPath}"`, { cwd: exeDir });
+      const cp = require("child_process");
+      const child = cp.spawn("cmd.exe", ["/c", "start", '""', batchPath], {
+        detached: true,
+        stdio: "ignore",
+        cwd: exeDir,
+        windowsHide: true
+      });
+      child.unref();
       process.exit(0);
     }, 1e3);
   } catch (err) {

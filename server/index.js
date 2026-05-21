@@ -851,7 +851,14 @@ del "%~f0"
     
     // Give time for response to reach client before exiting
     setTimeout(() => {
-      require('child_process').exec(`start "" "${batchPath}"`, { cwd: exeDir });
+      const cp = require('child_process');
+      const child = cp.spawn('cmd.exe', ['/c', 'start', '""', batchPath], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: exeDir,
+        windowsHide: true
+      });
+      child.unref();
       process.exit(0);
     }, 1000);
   } catch (err) {
