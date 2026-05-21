@@ -30100,8 +30100,8 @@ app.post("/api/settings", async (req, res) => {
 });
 var CURRENT_VERSION = "2.1.1";
 try {
-  if ("2.1.1") {
-    CURRENT_VERSION = "2.1.1";
+  if ("2.1.5") {
+    CURRENT_VERSION = "2.1.5";
   } else {
     const pkgPath = import_path.default.join(process.cwd(), "package.json");
     if (import_fs.default.existsSync(pkgPath)) {
@@ -30214,7 +30214,7 @@ app.post("/api/apply-update", (req, res) => {
 timeout /t 2 /nobreak > nul
 if exist "${newExe}" (
     move /y "${newExe}" "${currentExe}"
-    start "" "${currentExe}" --child
+    start "" "${currentExe}"
 )
 del "%~f0"
 `;
@@ -30223,7 +30223,7 @@ del "%~f0"
     logToFile("Update script created. Exiting app to apply update...");
     res.json({ ok: true });
     setTimeout(() => {
-      (0, import_child_process.exec)(`start "" "${batchPath}"`, { cwd: exeDir });
+      require("child_process").exec(`start "" "${batchPath}"`, { cwd: exeDir });
       process.exit(0);
     }, 1e3);
   } catch (err) {

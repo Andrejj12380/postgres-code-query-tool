@@ -1,6 +1,7 @@
-
 import React from 'react';
 import { ViewMode } from '../types';
+
+declare const __APP_VERSION__: string;
 
 interface SidebarProps {
   activeView: ViewMode;
@@ -23,7 +24,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenHelp
       <div className="p-6 border-b border-slate-800">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight">MarkView</h1>
-          <span className="bg-blue-900/50 text-blue-400 text-[10px] px-2 py-0.5 rounded-full border border-blue-500/30">v2.1.2</span>
+          <span className="bg-blue-900/50 text-blue-400 text-[10px] px-2 py-0.5 rounded-full border border-blue-500/30">v{__APP_VERSION__}</span>
         </div>
         <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest">Отображение отчёта</p>
       </div>
@@ -53,7 +54,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenHelp
       </div>
       <div className="p-4 border-t border-slate-800">
         <div className="text-[10px] text-slate-500 text-center">
-          V 2.1.0 (Local Client)
+          V {__APP_VERSION__} (Local Client)
         </div>
       </div>
     </div>

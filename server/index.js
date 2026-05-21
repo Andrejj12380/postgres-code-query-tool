@@ -839,7 +839,7 @@ app.post('/api/apply-update', (req, res) => {
 timeout /t 2 /nobreak > nul
 if exist "${newExe}" (
     move /y "${newExe}" "${currentExe}"
-    start "" "${currentExe}" --child
+    start "" "${currentExe}"
 )
 del "%~f0"
 `;
