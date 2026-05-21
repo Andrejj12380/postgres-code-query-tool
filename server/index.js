@@ -838,10 +838,10 @@ app.post('/api/apply-update', (req, res) => {
   const batchContent = `@echo off
 timeout /t 2 /nobreak > nul
 if exist "${newExe}" (
-    move /y "${newExe}" "${currentExe}"
+    move /y "${newExe}" "${currentExe}" > nul
     start "" "${currentExe}"
 )
-del "%~f0"
+(goto) 2>nul & del "%~f0"
 `;
 
   try {
@@ -852,7 +852,7 @@ del "%~f0"
     // Give time for response to reach client before exiting
     setTimeout(() => {
       const cp = require('child_process');
-      const child = cp.spawn('cmd.exe', ['/c', 'start', '""', batchPath], {
+      const child = cp.spawn('cmd.exe', ['/c', batchPath], {
         detached: true,
         stdio: 'ignore',
         cwd: exeDir,

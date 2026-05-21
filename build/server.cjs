@@ -30100,8 +30100,8 @@ app.post("/api/settings", async (req, res) => {
 });
 var CURRENT_VERSION = "2.1.1";
 try {
-  if ("2.1.9") {
-    CURRENT_VERSION = "2.1.9";
+  if ("2.1.10") {
+    CURRENT_VERSION = "2.1.10";
   } else {
     const pkgPath = import_path.default.join(process.cwd(), "package.json");
     if (import_fs.default.existsSync(pkgPath)) {
@@ -30213,10 +30213,10 @@ app.post("/api/apply-update", (req, res) => {
   const batchContent = `@echo off
 timeout /t 2 /nobreak > nul
 if exist "${newExe}" (
-    move /y "${newExe}" "${currentExe}"
+    move /y "${newExe}" "${currentExe}" > nul
     start "" "${currentExe}"
 )
-del "%~f0"
+(goto) 2>nul & del "%~f0"
 `;
   try {
     import_fs.default.writeFileSync(batchPath, batchContent, "utf-8");
@@ -30224,7 +30224,7 @@ del "%~f0"
     res.json({ ok: true });
     setTimeout(() => {
       const cp = require("child_process");
-      const child = cp.spawn("cmd.exe", ["/c", "start", '""', batchPath], {
+      const child = cp.spawn("cmd.exe", ["/c", batchPath], {
         detached: true,
         stdio: "ignore",
         cwd: exeDir,
