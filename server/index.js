@@ -6,6 +6,8 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import https from 'https';
 import path from 'path';
+import crypto from 'crypto';
+
 
 // Override default pg type parsers to prevent timezone conversion on dates and timestamps
 types.setTypeParser(1082, (val) => val); // date
@@ -81,7 +83,13 @@ function normalizeSettings(data) {
 
   const normalized = {
     connections: Array.isArray(data.connections) ? data.connections : [],
-    products: Array.isArray(data.products) ? data.products : [],
+    products: Array.isArray(data.products)
+      ? data.products.map(p => ({
+          id: p.id || crypto.randomUUID(),
+          name: p.name || '',
+          gtin: p.gtin || ''
+        }))
+      : [],
     fieldLabels: (data.fieldLabels && typeof data.fieldLabels === 'object') ? data.fieldLabels : {}
   };
 

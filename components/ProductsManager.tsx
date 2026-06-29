@@ -40,7 +40,12 @@ const ProductsManager: React.FC<ProductsManagerProps> = ({ products, setProducts
   };
 
   const deleteProduct = (id: string) => {
-    setProducts(products.filter(p => p.id !== id));
+    const product = products.find(p => p.id === id);
+    if (!product) return;
+
+    if (window.confirm(`Вы уверены, что хотите удалить продукт "${product.name || product.gtin}"?`)) {
+      setProducts(products.filter(p => p.id !== id));
+    }
   };
 
   const startEditing = (product: Product) => {

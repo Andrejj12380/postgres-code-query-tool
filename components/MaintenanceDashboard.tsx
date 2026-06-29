@@ -23,6 +23,22 @@ const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ connections
   const [detailedRecords, setDetailedRecords] = useState<FullCodeRecord[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   
+  const [sortField, setSortField] = useState<keyof FullCodeRecord | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: keyof FullCodeRecord) => {
+    if (sortField === field) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        setSortField(null);
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+  
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmMode, setConfirmMode] = useState<'all' | 'selected'>('all');
   const [confirmText, setConfirmText] = useState('');
@@ -50,6 +66,8 @@ const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ connections
     setIsLoading(true);
     setDetailedRecords([]);
     setSelectedIds([]);
+    setSortField(null);
+    setSortDirection('asc');
     try {
       const finalStatus = selectedStatus === 'custom' ? customStatus : selectedStatus;
       const apiBase = (import.meta.env.VITE_API_BASE as string) || '';
@@ -175,6 +193,46 @@ const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ connections
     } else {
       setSelectedIds([...selectedIds, id]);
     }
+  };
+
+  const sortedRecords = React.useMemo(() => {
+    if (!sortField) return detailedRecords;
+    return [...detailedRecords].sort((a, b) => {
+      const aVal = a[sortField];
+      const bVal = b[sortField];
+      
+      if (aVal === undefined || aVal === null) return sortDirection === 'asc' ? 1 : -1;
+      if (bVal === undefined || bVal === null) return sortDirection === 'asc' ? -1 : 1;
+      
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      
+      const aStr = String(aVal);
+      const bStr = String(bVal);
+      return sortDirection === 'asc' 
+        ? aStr.localeCompare(bStr) 
+        : bStr.localeCompare(aStr);
+    });
+  }, [detailedRecords, sortField, sortDirection]);
+
+  const renderSortableHeader = (field: keyof FullCodeRecord, label: string, className = "text-left") => {
+    const isSorted = sortField === field;
+    return (
+      <th 
+        className={`px-4 py-3 text-xs font-semibold text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none transition-colors ${className}`}
+        onClick={() => handleSort(field)}
+      >
+        <div className={`flex items-center gap-1 ${className.includes('text-right') ? 'justify-end' : ''}`}>
+          <span>{label}</span>
+          {isSorted && (
+            <span className="text-blue-600 text-sm">
+              {sortDirection === 'asc' ? ' ↑' : ' ↓'}
+            </span>
+          )}
+        </div>
+      </th>
+    );
   };
 
   return (
@@ -381,19 +439,19 @@ const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ connections
           </div>
           <div className="max-h-[500px] overflow-y-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-white sticky top-0">
+              <thead className="bg-white sticky top-0 border-b border-gray-200 shadow-sm z-10">
                 <tr>
                   <th className="px-4 py-3 text-left w-10">
                     <input type="checkbox" checked={selectedIds.length === detailedRecords.length && detailedRecords.length > 0} onChange={toggleSelectAll} className="rounded" />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Дата вставки</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Дата производства</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Код</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Статус</th>
+                  {renderSortableHeader('dtime_ins', 'Дата вставки')}
+                  {renderSortableHeader('production_date', 'Дата производства')}
+                  {renderSortableHeader('code', 'Код')}
+                  {renderSortableHeader('status', 'Статус', 'text-right')}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {detailedRecords.map((rec) => (
+                {sortedRecords.map((rec) => (
                   <tr key={rec.id} className={`hover:bg-blue-50 transition-colors ${selectedIds.includes(rec.id) ? 'bg-blue-50' : ''}`}>
                     <td className="px-4 py-3">
                       <input type="checkbox" checked={selectedIds.includes(rec.id)} onChange={() => toggleSelectId(rec.id)} className="rounded" />

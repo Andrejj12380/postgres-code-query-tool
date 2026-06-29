@@ -98,7 +98,11 @@ const App: React.FC = () => {
         const json = await resp.json();
         if (cancelled) return;
         setConnections(json.connections || []);
-        setProducts(json.products || []);
+        const loadedProducts = (json.products || []).map((p: any) => ({
+          ...p,
+          id: p.id || crypto.randomUUID()
+        }));
+        setProducts(loadedProducts);
         setFieldLabels(json.fieldLabels || {});
         setIsInitialized(true);
       } catch (e) {
