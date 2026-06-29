@@ -30105,8 +30105,8 @@ app.post("/api/settings", async (req, res) => {
 });
 var CURRENT_VERSION = "2.1.1";
 try {
-  if ("2.1.15") {
-    CURRENT_VERSION = "2.1.15";
+  if ("2.1.16") {
+    CURRENT_VERSION = "2.1.16";
   } else {
     const pkgPath = import_path.default.join(process.cwd(), "package.json");
     if (import_fs.default.existsSync(pkgPath)) {
