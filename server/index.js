@@ -21,6 +21,22 @@ app.use(cors());
 app.use(express.json());
 
 const validateDateField = (field) => ['production_date', 'dtime_ins'].includes(field);
+const escapeIdentifier = (name) => `"${String(name).replace(/"/g, '""')}"`;
+
+async function getCodesTableColumns(client) {
+  const result = await client.query(`
+    SELECT a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+    FROM pg_attribute a
+    WHERE a.attrelid = 'codes'::regclass
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+    ORDER BY a.attnum;
+  `);
+  return result.rows.map(r => ({
+    name: r.column_name,
+    dataType: r.data_type
+  }));
+}
 
 // Helper to connect to Postgres with IPv6 -> IPv4 fallback on certain errors
 async function connectWithFallback(connection) {
@@ -292,7 +308,8 @@ function getCachedSettings() {
   }
   return {
     connections: Array.isArray(settingsCache.connections) ? [...settingsCache.connections] : [],
-    products: Array.isArray(settingsCache.products) ? [...settingsCache.products] : []
+    products: Array.isArray(settingsCache.products) ? [...settingsCache.products] : [],
+    fieldLabels: (settingsCache.fieldLabels && typeof settingsCache.fieldLabels === 'object') ? { ...settingsCache.fieldLabels } : {}
   };
 }
 
@@ -514,6 +531,25 @@ app.post('/api/print-summary', async (req, res) => {
   }
 });
 
+app.post('/api/columns', async (req, res) => {
+  const { connection } = req.body;
+  if (!connection) return res.status(400).send('Missing connection');
+
+  let client;
+  try {
+    client = await connectWithFallback(connection);
+    const columns = await getCodesTableColumns(client);
+    await client.end();
+    res.json({ columns });
+  } catch (err) {
+    if (client) {
+      try { await client.end(); } catch {}
+    }
+    console.error('Columns query error', err);
+    res.status(500).send(err?.message || 'Columns query error');
+  }
+});
+
 app.post('/api/full', async (req, res) => {
   const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, markAsExported, status, searchCode } = req.body;
   console.log('[/api/full] Request received:', { markAsExported, columnsCount: columns?.length });
@@ -555,30 +591,34 @@ app.post('/api/full', async (req, res) => {
 
   const lim = Number(limit) || null; // null means no LIMIT — fetch all matching rows
 
-  // Whitelist allowed columns to prevent SQL injection
-  const ALLOWED_COLUMNS = [
-    'id', 'dtime_ins', 'code', 'status',
-    'dtime_status', 'grcode', 'dtime_grcode',
-    'sscc', 'dtime_sscc', 'production_date'
-  ];
-
-  let selectClause = '*';
-  let requestedId = true;
-  if (Array.isArray(columns) && columns.length > 0) {
-    const validColumns = columns.filter(c => ALLOWED_COLUMNS.includes(c));
-    requestedId = validColumns.includes('id');
-
-    if (validColumns.length > 0) {
-      // Internal requirement: we MUST have 'id' to perform batch status updates
-      if (markAsExported && !requestedId) {
-        validColumns.push('id');
-      }
-      selectClause = validColumns.join(', ');
-    }
-  }
-
+  let client;
   try {
-    const client = await connectWithFallback(connection);
+    client = await connectWithFallback(connection);
+
+    let selectClause = '*';
+    let requestedId = true;
+    let addedIdInternally = false;
+
+    if (Array.isArray(columns) && columns.length > 0) {
+      // Dynamically validate requested columns against the actual schema of table `codes`
+      const tableColumns = await getCodesTableColumns(client);
+      const allowedColumnNames = new Set(tableColumns.map(c => c.name));
+      const validColumns = [...new Set(columns.filter(c => typeof c === 'string' && allowedColumnNames.has(c)))];
+
+      if (validColumns.length === 0) {
+        await client.end();
+        return res.status(400).send('Выбранные поля не найдены в таблице codes');
+      }
+
+      requestedId = validColumns.includes('id');
+
+      // Internal requirement: we MUST have 'id' to perform batch status updates
+      if (markAsExported && !requestedId && allowedColumnNames.has('id')) {
+        validColumns.push('id');
+        addedIdInternally = true;
+      }
+      selectClause = validColumns.map(escapeIdentifier).join(', ');
+    }
 
     const sql = `SELECT ${selectClause} FROM codes WHERE ${where}${lim ? ` LIMIT ${lim}` : ''};`;
     const result = await client.query(sql, params);
@@ -605,7 +645,7 @@ app.post('/api/full', async (req, res) => {
     await client.end();
 
     // If we added 'id' internally but the user didn't ask for it, strip it now
-    if (markAsExported && !requestedId && Array.isArray(columns) && columns.length > 0) {
+    if (addedIdInternally) {
       const finalRows = result.rows.map(row => {
         const { id, ...rest } = row;
         return rest;
@@ -615,6 +655,9 @@ app.post('/api/full', async (req, res) => {
       res.json(result.rows);
     }
   } catch (err) {
+    if (client) {
+      try { await client.end(); } catch {}
+    }
     console.error('Query error', err);
     res.status(500).send(err?.message || 'Query error');
   }

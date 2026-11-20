@@ -51,7 +51,14 @@ export enum ViewMode {
 
 export type DateField = 'production_date' | 'dtime_ins';
 
-export const ALL_CODE_FIELDS: { key: keyof FullCodeRecord; label: string }[] = [
+export interface CodeField {
+  key: string;
+  label: string;
+  dataType?: string;
+  isCustom?: boolean;
+}
+
+export const ALL_CODE_FIELDS: CodeField[] = [
   { key: 'id', label: 'ID' },
   { key: 'dtime_ins', label: 'Дата вставки (dtime_ins)' },
   { key: 'code', label: 'Код (code)' },

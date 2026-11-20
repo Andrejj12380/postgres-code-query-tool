@@ -25641,7 +25641,7 @@ var require_utils3 = __commonJS({
       }
       return config;
     }
-    var escapeIdentifier2 = function(str) {
+    var escapeIdentifier3 = function(str) {
       return '"' + str.replace(/"/g, '""') + '"';
     };
     var escapeLiteral2 = function(str) {
@@ -25675,7 +25675,7 @@ var require_utils3 = __commonJS({
         return prepareValue(value);
       },
       normalizeQueryConfig,
-      escapeIdentifier: escapeIdentifier2,
+      escapeIdentifier: escapeIdentifier3,
       escapeLiteral: escapeLiteral2
     };
   }
@@ -29415,7 +29415,7 @@ var require_lib5 = __commonJS({
     var Pool2 = require_pg_pool();
     var TypeOverrides2 = require_type_overrides();
     var { DatabaseError: DatabaseError2 } = require_dist();
-    var { escapeIdentifier: escapeIdentifier2, escapeLiteral: escapeLiteral2 } = require_utils3();
+    var { escapeIdentifier: escapeIdentifier3, escapeLiteral: escapeLiteral2 } = require_utils3();
     var poolFactory = (Client3) => {
       return class BoundPool extends Pool2 {
         constructor(options) {
@@ -29433,7 +29433,7 @@ var require_lib5 = __commonJS({
       this.types = require_pg_types();
       this.DatabaseError = DatabaseError2;
       this.TypeOverrides = TypeOverrides2;
-      this.escapeIdentifier = escapeIdentifier2;
+      this.escapeIdentifier = escapeIdentifier3;
       this.escapeLiteral = escapeLiteral2;
       this.Result = Result2;
       this.utils = utils;
@@ -29499,6 +29499,21 @@ var app = (0, import_express.default)();
 app.use((0, import_cors.default)());
 app.use(import_express.default.json());
 var validateDateField = (field) => ["production_date", "dtime_ins"].includes(field);
+var escapeIdentifier2 = (name) => `"${String(name).replace(/"/g, '""')}"`;
+async function getCodesTableColumns(client) {
+  const result = await client.query(`
+    SELECT a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS data_type
+    FROM pg_attribute a
+    WHERE a.attrelid = 'codes'::regclass
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+    ORDER BY a.attnum;
+  `);
+  return result.rows.map((r) => ({
+    name: r.column_name,
+    dataType: r.data_type
+  }));
+}
 async function connectWithFallback(connection) {
   const makeClient = (conn) => new Client(conn);
   try {
@@ -29735,7 +29750,8 @@ function getCachedSettings() {
   }
   return {
     connections: Array.isArray(settingsCache.connections) ? [...settingsCache.connections] : [],
-    products: Array.isArray(settingsCache.products) ? [...settingsCache.products] : []
+    products: Array.isArray(settingsCache.products) ? [...settingsCache.products] : [],
+    fieldLabels: settingsCache.fieldLabels && typeof settingsCache.fieldLabels === "object" ? { ...settingsCache.fieldLabels } : {}
   };
 }
 var LOG_PATH = import_path.default.join(exeDir, "markview.log");
@@ -29932,6 +29948,27 @@ app.post("/api/print-summary", async (req, res) => {
     res.status(500).send(err?.message || "Print summary query error");
   }
 });
+app.post("/api/columns", async (req, res) => {
+  const { connection } = req.body;
+  if (!connection)
+    return res.status(400).send("Missing connection");
+  let client;
+  try {
+    client = await connectWithFallback(connection);
+    const columns = await getCodesTableColumns(client);
+    await client.end();
+    res.json({ columns });
+  } catch (err) {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+      }
+    }
+    console.error("Columns query error", err);
+    res.status(500).send(err?.message || "Columns query error");
+  }
+});
 app.post("/api/full", async (req, res) => {
   const { connection, selectedGtin, startDate, endDate, dateField, limit, exportAll, columns, markAsExported, status, searchCode } = req.body;
   console.log("[/api/full] Request received:", { markAsExported, columnsCount: columns?.length });
@@ -29963,32 +30000,27 @@ app.post("/api/full", async (req, res) => {
     where = `status = $${params.length} AND ` + where;
   }
   const lim = Number(limit) || null;
-  const ALLOWED_COLUMNS = [
-    "id",
-    "dtime_ins",
-    "code",
-    "status",
-    "dtime_status",
-    "grcode",
-    "dtime_grcode",
-    "sscc",
-    "dtime_sscc",
-    "production_date"
-  ];
-  let selectClause = "*";
-  let requestedId = true;
-  if (Array.isArray(columns) && columns.length > 0) {
-    const validColumns = columns.filter((c) => ALLOWED_COLUMNS.includes(c));
-    requestedId = validColumns.includes("id");
-    if (validColumns.length > 0) {
-      if (markAsExported && !requestedId) {
-        validColumns.push("id");
-      }
-      selectClause = validColumns.join(", ");
-    }
-  }
+  let client;
   try {
-    const client = await connectWithFallback(connection);
+    client = await connectWithFallback(connection);
+    let selectClause = "*";
+    let requestedId = true;
+    let addedIdInternally = false;
+    if (Array.isArray(columns) && columns.length > 0) {
+      const tableColumns = await getCodesTableColumns(client);
+      const allowedColumnNames = new Set(tableColumns.map((c) => c.name));
+      const validColumns = [...new Set(columns.filter((c) => typeof c === "string" && allowedColumnNames.has(c)))];
+      if (validColumns.length === 0) {
+        await client.end();
+        return res.status(400).send("\u0412\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0435 \u043F\u043E\u043B\u044F \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B \u0432 \u0442\u0430\u0431\u043B\u0438\u0446\u0435 codes");
+      }
+      requestedId = validColumns.includes("id");
+      if (markAsExported && !requestedId && allowedColumnNames.has("id")) {
+        validColumns.push("id");
+        addedIdInternally = true;
+      }
+      selectClause = validColumns.map(escapeIdentifier2).join(", ");
+    }
     const sql = `SELECT ${selectClause} FROM codes WHERE ${where}${lim ? ` LIMIT ${lim}` : ""};`;
     const result = await client.query(sql, params);
     if (result.rows.length > 0) {
@@ -30009,7 +30041,7 @@ app.post("/api/full", async (req, res) => {
       }
     }
     await client.end();
-    if (markAsExported && !requestedId && Array.isArray(columns) && columns.length > 0) {
+    if (addedIdInternally) {
       const finalRows = result.rows.map((row) => {
         const { id, ...rest } = row;
         return rest;
@@ -30019,6 +30051,12 @@ app.post("/api/full", async (req, res) => {
       res.json(result.rows);
     }
   } catch (err) {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+      }
+    }
     console.error("Query error", err);
     res.status(500).send(err?.message || "Query error");
   }
@@ -30105,8 +30143,8 @@ app.post("/api/settings", async (req, res) => {
 });
 var CURRENT_VERSION = "2.1.1";
 try {
-  if ("2.1.17") {
-    CURRENT_VERSION = "2.1.17";
+  if (process.env.APP_VERSION) {
+    CURRENT_VERSION = process.env.APP_VERSION;
   } else {
     const pkgPath = import_path.default.join(process.cwd(), "package.json");
     if (import_fs.default.existsSync(pkgPath)) {

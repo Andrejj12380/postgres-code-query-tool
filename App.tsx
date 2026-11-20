@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import ConnectionsManager from './components/ConnectionsManager';
@@ -9,14 +9,24 @@ import PrintDashboard from './components/PrintDashboard';
 import MaintenanceDashboard from './components/MaintenanceDashboard';
 import HelpTour from './components/HelpTour';
 import UpdateBanner from './components/UpdateBanner';
-import { ViewMode, DbConnection, Product } from './types';
+import { ViewMode, DbConnection, Product, CodeField } from './types';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.DASHBOARD);
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
+  const [discoveredColumns, setDiscoveredColumns] = useState<CodeField[]>([]);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  const handleColumnsLoaded = useCallback((cols: CodeField[]) => {
+    setDiscoveredColumns(prev => {
+      const map = new Map<string, CodeField>();
+      prev.forEach(c => map.set(c.key, c));
+      cols.forEach(c => map.set(c.key, c));
+      return Array.from(map.values());
+    });
+  }, []);
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -150,7 +160,12 @@ const App: React.FC = () => {
         <main className="flex-1 overflow-y-auto p-8">
           <div className="max-w-7xl mx-auto">
           <div style={{ display: activeView === ViewMode.DASHBOARD ? 'block' : 'none' }}>
-            <Dashboard connections={connections} products={products} fieldLabels={fieldLabels} />
+            <Dashboard
+              connections={connections}
+              products={products}
+              fieldLabels={fieldLabels}
+              onColumnsLoaded={handleColumnsLoaded}
+            />
           </div>
           <div style={{ display: activeView === ViewMode.CONNECTIONS ? 'block' : 'none' }}>
             <ConnectionsManager connections={connections} setConnections={setConnections} />
@@ -162,7 +177,11 @@ const App: React.FC = () => {
             <PrintDashboard connections={connections} products={products} />
           </div>
           <div style={{ display: activeView === ViewMode.FIELD_NAMES ? 'block' : 'none' }}>
-            <FieldLabelsEditor fieldLabels={fieldLabels} onSave={(labels) => setFieldLabels(labels)} />
+            <FieldLabelsEditor
+              fieldLabels={fieldLabels}
+              extraFields={discoveredColumns}
+              onSave={(labels) => setFieldLabels(labels)}
+            />
           </div>
           <div style={{ display: activeView === ViewMode.MAINTENANCE ? 'block' : 'none' }}>
             <MaintenanceDashboard connections={connections} products={products} />

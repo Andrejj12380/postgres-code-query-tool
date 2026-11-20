@@ -1,25 +1,122 @@
 
-import React, { useState, useRef } from 'react';
-import { DbConnection, Product, QueryResult, DateField, ALL_CODE_FIELDS, FullCodeRecord } from '../types';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { DbConnection, Product, QueryResult, DateField, ALL_CODE_FIELDS, CodeField } from '../types';
 import { generateSqlQuery, exportToCsv, exportResultsToExcel, exportToExcel } from '../services/dbService';
 
 interface DashboardProps {
   connections: DbConnection[];
   products: Product[];
   fieldLabels: Record<string, string>;
+  onColumnsLoaded?: (columns: CodeField[]) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabels = {} }) => {
+const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabels = {}, onColumnsLoaded }) => {
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [selectedProductGtin, setSelectedProductGtin] = useState<string>('all');
   const [dateField, setDateField] = useState<DateField>('production_date');
   const [startDate, setStartDate] = useState<Date | null>(new Date());
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [isRange, setIsRange] = useState(false);
+  const [availableFields, setAvailableFields] = useState<CodeField[]>(ALL_CODE_FIELDS);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(ALL_CODE_FIELDS.map(f => f.key));
+  const [columnsLoadedFromDb, setColumnsLoadedFromDb] = useState(false);
+  const [isLoadingColumns, setIsLoadingColumns] = useState(false);
+  const [columnsError, setColumnsError] = useState<string | null>(null);
   const [markAsExported, setMarkAsExported] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [customStatus, setCustomStatus] = useState<string>('');
+
+  const columnsRequestIdRef = useRef(0);
+  const onColumnsLoadedRef = useRef(onColumnsLoaded);
+  onColumnsLoadedRef.current = onColumnsLoaded;
+
+  const fetchColumnsForDb = useCallback(async (dbId: string, preserveSelection = false) => {
+    const requestId = ++columnsRequestIdRef.current;
+
+    if (!dbId) {
+      setAvailableFields(ALL_CODE_FIELDS);
+      setSelectedColumns(ALL_CODE_FIELDS.map(f => f.key));
+      setColumnsLoadedFromDb(false);
+      setColumnsError(null);
+      setIsLoadingColumns(false);
+      return;
+    }
+
+    const conn = connections.find(c => c.id === dbId);
+    if (!conn) return;
+
+    setIsLoadingColumns(true);
+    setColumnsError(null);
+
+    try {
+      const apiBase = (import.meta.env.VITE_API_BASE as string) || '';
+      const url = apiBase ? `${apiBase}/api/columns` : `/api/columns`;
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connection: conn })
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(errText || 'Не удалось получить список полей из БД');
+      }
+
+      const json = await resp.json() as { columns: Array<{ name: string; dataType?: string }> };
+      if (requestId !== columnsRequestIdRef.current) return;
+
+      const dbCols = Array.isArray(json.columns) ? json.columns : [];
+      if (dbCols.length === 0) {
+        throw new Error('В таблице codes не найдено колонок');
+      }
+
+      const mappedFields: CodeField[] = dbCols.map(col => {
+        const known = ALL_CODE_FIELDS.find(f => f.key === col.name);
+        return {
+          key: col.name,
+          label: known ? known.label : col.name,
+          dataType: col.dataType,
+          isCustom: !known
+        };
+      });
+
+      setAvailableFields(prevFields => {
+        const prevKeys = new Set(prevFields.map(f => f.key));
+        const newKeys = mappedFields.map(f => f.key);
+        const newKeysSet = new Set(newKeys);
+
+        setSelectedColumns(prevSelected => {
+          if (!preserveSelection) {
+            return newKeys;
+          }
+          const kept = prevSelected.filter(k => newKeysSet.has(k));
+          const added = newKeys.filter(k => !prevKeys.has(k));
+          return [...kept, ...added];
+        });
+
+        return mappedFields;
+      });
+
+      setColumnsLoadedFromDb(true);
+      onColumnsLoadedRef.current?.(mappedFields);
+    } catch (err) {
+      if (requestId !== columnsRequestIdRef.current) return;
+      console.error('Failed to fetch DB columns:', err);
+      setColumnsError(err instanceof Error ? err.message : 'Ошибка загрузки полей');
+      setColumnsLoadedFromDb(false);
+      setAvailableFields(ALL_CODE_FIELDS);
+      setSelectedColumns(ALL_CODE_FIELDS.map(f => f.key));
+    } finally {
+      if (requestId === columnsRequestIdRef.current) {
+        setIsLoadingColumns(false);
+      }
+    }
+  }, [connections]);
+
+  useEffect(() => {
+    fetchColumnsForDb(selectedDb, false);
+  }, [selectedDb, fetchColumnsForDb]);
 
   const formatDate = (d: Date | null) => {
     if (!d) return '';
@@ -174,7 +271,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
         return;
       }
       const filename = `export_${selectedProductGtin}_${formatDate(startDate)}`;
-      const columnMap = ALL_CODE_FIELDS.reduce((acc, field) => {
+      const columnMap = availableFields.reduce((acc, field) => {
         acc[field.key] = fieldLabels[field.key] || field.label;
         return acc;
       }, {} as { [key: string]: string });
@@ -201,10 +298,10 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
   };
 
   const toggleAllColumns = () => {
-    if (selectedColumns.length === ALL_CODE_FIELDS.length) {
+    if (selectedColumns.length === availableFields.length && availableFields.length > 0) {
       setSelectedColumns([]);
     } else {
-      setSelectedColumns(ALL_CODE_FIELDS.map(f => f.key));
+      setSelectedColumns(availableFields.map(f => f.key));
     }
   };
 
@@ -384,25 +481,79 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
 
       {/* Column Selection Card */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn" data-tour="dashboard-columns">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-gray-700">Настройки выгрузки (поля)</h3>
-          <button
-            onClick={toggleAllColumns}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-          >
-            {selectedColumns.length === ALL_CODE_FIELDS.length ? 'Снять выделение' : 'Выбрать все'}
-          </button>
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-gray-700">Настройки выгрузки (поля)</h3>
+            {isLoadingColumns && (
+              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full animate-pulse">
+                Загрузка полей из БД...
+              </span>
+            )}
+            {!isLoadingColumns && columnsLoadedFromDb && (
+              <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                Из БД ({availableFields.length})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            {selectedDb && (
+              <button
+                type="button"
+                onClick={() => fetchColumnsForDb(selectedDb, true)}
+                disabled={isLoadingColumns}
+                className="text-sm text-gray-500 hover:text-blue-600 font-medium flex items-center gap-1 disabled:opacity-50 transition-colors"
+                title="Обновить список колонок таблицы codes из выбранной БД"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isLoadingColumns ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Обновить поля
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={toggleAllColumns}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+              {selectedColumns.length === availableFields.length && availableFields.length > 0 ? 'Снять выделение' : 'Выбрать все'}
+            </button>
+          </div>
         </div>
+        {columnsError && (
+          <div className="mb-4 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between gap-2">
+            <span>Не удалось загрузить колонки из БД ({columnsError}). Показан стандартный набор полей.</span>
+            {selectedDb && (
+              <button
+                type="button"
+                onClick={() => fetchColumnsForDb(selectedDb, false)}
+                className="underline font-semibold whitespace-nowrap hover:text-amber-900"
+              >
+                Повторить
+              </button>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          {ALL_CODE_FIELDS.map(field => (
-            <label key={field.key} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors">
+          {availableFields.map(field => (
+            <label
+              key={field.key}
+              className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg transition-colors"
+              title={`${field.key}${field.dataType ? ` (${field.dataType})` : ''}`}
+            >
               <input
                 type="checkbox"
-                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-gray-300"
+                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-gray-300 shrink-0"
                 checked={selectedColumns.includes(field.key)}
                 onChange={() => toggleColumn(field.key)}
               />
-              <span className="text-sm text-gray-700">{fieldLabels[field.key] || field.label}</span>
+              <span className="text-sm text-gray-700 break-words">
+                {fieldLabels[field.key] || field.label}
+              </span>
+              {field.isCustom && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-semibold shrink-0">
+                  БД
+                </span>
+              )}
             </label>
           ))}
         </div>

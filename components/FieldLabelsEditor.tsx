@@ -1,15 +1,36 @@
-import React, { useState } from 'react';
-import { ALL_CODE_FIELDS } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ALL_CODE_FIELDS, CodeField } from '../types';
 
 interface FieldLabelsEditorProps {
     fieldLabels: Record<string, string>;
+    extraFields?: CodeField[];
     onSave: (labels: Record<string, string>) => void;
 }
 
-const FieldLabelsEditor: React.FC<FieldLabelsEditorProps> = ({ fieldLabels, onSave }) => {
+const FieldLabelsEditor: React.FC<FieldLabelsEditorProps> = ({ fieldLabels, extraFields = [], onSave }) => {
     const [labels, setLabels] = useState<Record<string, string>>(fieldLabels || {});
     const [isSaving, setIsSaving] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
+
+    useEffect(() => {
+        setLabels(fieldLabels || {});
+    }, [fieldLabels]);
+
+    const allFields = useMemo(() => {
+        const map = new Map<string, CodeField>();
+        ALL_CODE_FIELDS.forEach(f => map.set(f.key, f));
+        extraFields.forEach(f => {
+            if (!map.has(f.key)) {
+                map.set(f.key, { ...f, isCustom: true });
+            }
+        });
+        Object.keys(fieldLabels || {}).forEach(key => {
+            if (!map.has(key)) {
+                map.set(key, { key, label: key, isCustom: true });
+            }
+        });
+        return Array.from(map.values());
+    }, [extraFields, fieldLabels]);
 
     const handleChange = (key: string, value: string) => {
         setLabels(prev => ({ ...prev, [key]: value }));
@@ -46,10 +67,15 @@ const FieldLabelsEditor: React.FC<FieldLabelsEditorProps> = ({ fieldLabels, onSa
             </div>
             <div className="p-6">
                 <div className="grid grid-cols-1 gap-4">
-                    {ALL_CODE_FIELDS.map(field => (
+                    {allFields.map(field => (
                         <div key={field.key} className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
                             <div className="md:w-1/3">
-                                <span className="text-xs font-bold text-gray-400 uppercase">Поле в БД:</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-gray-400 uppercase">Поле в БД:</span>
+                                    {field.isCustom && (
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-semibold">Из БД</span>
+                                    )}
+                                </div>
                                 <p className="font-mono text-sm text-gray-600">{field.key}</p>
                                 <p className="text-xs text-gray-400 italic">По умолчанию: {field.label}</p>
                             </div>
