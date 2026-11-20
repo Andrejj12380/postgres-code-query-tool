@@ -29514,6 +29514,67 @@ async function getCodesTableColumns(client) {
     dataType: r.data_type
   }));
 }
+var AGGREGATION_HIERARCHY = ["sscc1", "sscc", "grcode"];
+async function getAggregationSchema(client) {
+  const cols = await getCodesTableColumns(client);
+  const colSet = new Set(cols.map((c) => c.name));
+  const levels = AGGREGATION_HIERARCHY.filter((lvl) => colSet.has(lvl));
+  return { levels, colSet };
+}
+function buildCodesWhere({ selectedGtin, startDate, endDate, dateField, status }) {
+  const params = [];
+  let where = "";
+  if (startDate && dateField) {
+    if (endDate) {
+      params.push(startDate);
+      where += `${dateField}::date >= $${params.length}`;
+      params.push(endDate);
+      where += ` AND ${dateField}::date <= $${params.length}`;
+    } else {
+      params.push(startDate);
+      where += `${dateField}::date = $${params.length}`;
+    }
+  } else {
+    where = "1=1";
+  }
+  if (selectedGtin && selectedGtin !== "all") {
+    params.push(`%${selectedGtin}%`);
+    where = `code LIKE $${params.length} AND ` + where;
+  }
+  if (status && status !== "all") {
+    params.push(status);
+    where = `status = $${params.length} AND ` + where;
+  }
+  return { where, params };
+}
+function nonEmptyExpr(col) {
+  const id = escapeIdentifier2(col);
+  return `NULLIF(TRIM(COALESCE(${id}::text, '')), '')`;
+}
+async function fetchAggregationStats(client, where, params, levels) {
+  if (!levels || levels.length === 0) {
+    return { levels: [], stats: [], unaggregatedCount: 0 };
+  }
+  const selectParts = levels.map((lvl) => {
+    const expr = nonEmptyExpr(lvl);
+    return `COUNT(DISTINCT ${expr})::int AS ${escapeIdentifier2(lvl + "_distinct")}, COUNT(*) FILTER (WHERE ${expr} IS NOT NULL)::int AS ${escapeIdentifier2(lvl + "_items")}`;
+  });
+  const unaggCondition = levels.map((lvl) => `${nonEmptyExpr(lvl)} IS NULL`).join(" AND ");
+  selectParts.push(`COUNT(*) FILTER (WHERE ${unaggCondition})::int AS unaggregated_count`);
+  const sql = `SELECT ${selectParts.join(", ")} FROM codes WHERE ${where};`;
+  const res = await client.query(sql, params);
+  const row = res.rows[0] || {};
+  const stats = levels.map((lvl) => ({
+    level: lvl,
+    distinctCount: Number(row[`${lvl}_distinct`] || 0),
+    itemsCount: Number(row[`${lvl}_items`] || 0)
+  }));
+  return {
+    levels,
+    stats,
+    unaggregatedCount: Number(row.unaggregated_count || 0)
+  };
+}
 async function connectWithFallback(connection) {
   const makeClient = (conn) => new Client(conn);
   try {
@@ -29911,8 +29972,17 @@ app.post("/api/summary", async (req, res) => {
     const prefixResult = await client.query(sqlPrefix, paramsPrefix);
     const prefixCount = prefixResult.rows[0] ? Number(prefixResult.rows[0].prefixcount) : 0;
     const nonPrefixCount = Math.max(0, totalCount - prefixCount);
+    let aggregation = null;
+    try {
+      const { levels } = await getAggregationSchema(client);
+      if (levels.length > 0) {
+        aggregation = await fetchAggregationStats(client, where, params, levels);
+      }
+    } catch (aggErr) {
+      console.warn("[/api/summary] Aggregation stats skipped:", aggErr?.message || aggErr);
+    }
     await client.end();
-    res.json({ rows: gtinResult.rows, totalCount, prefixCount, nonPrefixCount });
+    res.json({ rows: gtinResult.rows, totalCount, prefixCount, nonPrefixCount, aggregation });
   } catch (err) {
     console.error("Query error", err);
     res.status(500).send(err?.message || "Query error");
@@ -29967,6 +30037,497 @@ app.post("/api/columns", async (req, res) => {
     }
     console.error("Columns query error", err);
     res.status(500).send(err?.message || "Columns query error");
+  }
+});
+function getNextLevel(availableLevels, currentLevel) {
+  const idx = availableLevels.indexOf(currentLevel);
+  if (idx === -1)
+    return "code";
+  if (idx + 1 < availableLevels.length)
+    return availableLevels[idx + 1];
+  return "code";
+}
+function getDateColForLevel(colSet, level) {
+  const candidate = `dtime_${level}`;
+  if (colSet.has(candidate))
+    return escapeIdentifier2(candidate);
+  if (colSet.has("dtime_ins"))
+    return escapeIdentifier2("dtime_ins");
+  return null;
+}
+async function queryContainerNodes(client, { where, params, level, childLevel, colSet, limit = 500 }) {
+  const lvlExpr = nonEmptyExpr(level);
+  const dateCol = getDateColForLevel(colSet, level);
+  const childCountSql = childLevel && childLevel !== "code" ? `COUNT(DISTINCT ${nonEmptyExpr(childLevel)})::int AS child_count` : `COUNT(*)::int AS child_count`;
+  const lastDateSql = dateCol ? `MAX(${dateCol})::text AS last_date` : `NULL::text AS last_date`;
+  const sql = `
+    SELECT
+      ${lvlExpr} AS container_code,
+      COUNT(*)::int AS items_count,
+      ${childCountSql},
+      ARRAY_REMOVE(ARRAY_AGG(DISTINCT SUBSTRING(code FROM '01([0-9]{14})')), NULL) AS gtins,
+      ${lastDateSql}
+    FROM codes
+    WHERE ${where} AND ${lvlExpr} IS NOT NULL
+    GROUP BY ${lvlExpr}
+    ORDER BY ${dateCol ? `MAX(${dateCol}) DESC NULLS LAST,` : ""} ${lvlExpr} ASC
+    LIMIT ${Number(limit) || 500};
+  `;
+  const res = await client.query(sql, params);
+  return res.rows.map((r) => ({
+    level,
+    code: r.container_code,
+    itemsCount: Number(r.items_count || 0),
+    childLevel: childLevel || "code",
+    childCount: Number(r.child_count || 0),
+    gtins: Array.isArray(r.gtins) ? r.gtins : [],
+    lastDate: r.last_date || null
+  }));
+}
+async function queryLeafRecords(client, { where, params, colSet, limit = 2e3 }) {
+  const desiredCols = ["id", "code", "status", "production_date", "dtime_ins", "dtime_status", "grcode", "sscc", "sscc1"];
+  const existingCols = desiredCols.filter((c) => colSet.has(c));
+  const selectSql = existingCols.map(escapeIdentifier2).join(", ");
+  const orderCol = colSet.has("id") ? "ORDER BY id ASC" : "";
+  const sql = `SELECT ${selectSql} FROM codes WHERE ${where} ${orderCol} LIMIT ${Number(limit) || 2e3};`;
+  const res = await client.query(sql, params);
+  return res.rows;
+}
+app.post("/api/aggregation/overview", async (req, res) => {
+  const { connection, selectedGtin, startDate, endDate, dateField, status, rootLevel, limit } = req.body;
+  if (!connection || !startDate || !dateField)
+    return res.status(400).send("Missing parameters");
+  if (!validateDateField(dateField))
+    return res.status(400).send("Invalid dateField");
+  let client;
+  try {
+    client = await connectWithFallback(connection);
+    const { levels, colSet } = await getAggregationSchema(client);
+    const { where, params } = buildCodesWhere({ selectedGtin, startDate, endDate, dateField, status });
+    const totalRes = await client.query(`SELECT COUNT(*)::int AS total FROM codes WHERE ${where};`, params);
+    const totalCodes = Number(totalRes.rows[0]?.total || 0);
+    if (levels.length === 0) {
+      await client.end();
+      return res.json({
+        availableLevels: [],
+        activeRootLevel: null,
+        totalCodes,
+        unaggregatedCount: totalCodes,
+        levelStats: [],
+        nodes: [],
+        totalNodesCount: 0,
+        anomalies: { unaggregatedCount: totalCodes, partialLevels: [], irregularGroups: [] }
+      });
+    }
+    const aggStats = await fetchAggregationStats(client, where, params, levels);
+    const statsByLevel = Object.fromEntries(aggStats.stats.map((s) => [s.level, s]));
+    let activeRootLevel = null;
+    if (rootLevel && levels.includes(rootLevel)) {
+      activeRootLevel = rootLevel;
+    } else {
+      const firstPopulated = aggStats.stats.find((s) => s.distinctCount > 0);
+      activeRootLevel = firstPopulated ? firstPopulated.level : levels[0];
+    }
+    const childLevel = getNextLevel(levels, activeRootLevel);
+    const nodes = activeRootLevel ? await queryContainerNodes(client, { where, params, level: activeRootLevel, childLevel, colSet, limit: limit || 500 }) : [];
+    const totalNodesCount = statsByLevel[activeRootLevel]?.distinctCount || 0;
+    const partialLevels = [];
+    for (let i = 0; i < levels.length - 1; i++) {
+      const parentLvl = levels[i];
+      const childLvl = levels[i + 1];
+      if ((statsByLevel[parentLvl]?.distinctCount || 0) > 0 && (statsByLevel[childLvl]?.distinctCount || 0) > 0) {
+        const pExpr = nonEmptyExpr(parentLvl);
+        const cExpr = nonEmptyExpr(childLvl);
+        const partialRes = await client.query(
+          `SELECT COUNT(DISTINCT ${cExpr})::int AS containers_count, COUNT(*)::int AS items_count
+           FROM codes
+           WHERE ${where} AND ${cExpr} IS NOT NULL AND ${pExpr} IS NULL;`,
+          params
+        );
+        const containersCount = Number(partialRes.rows[0]?.containers_count || 0);
+        const itemsCount = Number(partialRes.rows[0]?.items_count || 0);
+        if (itemsCount > 0) {
+          partialLevels.push({ childLevel: childLvl, parentLevel: parentLvl, containersCount, itemsCount });
+        }
+      }
+    }
+    const irregularGroups = [];
+    for (const lvl of levels) {
+      const st = statsByLevel[lvl];
+      if (!st || st.distinctCount < 3)
+        continue;
+      const lvlExpr = nonEmptyExpr(lvl);
+      const nextLvl = getNextLevel(levels, lvl);
+      const useChildDistinct = nextLvl !== "code" && (statsByLevel[nextLvl]?.distinctCount || 0) > 0;
+      const countExpr = useChildDistinct ? `COUNT(DISTINCT ${nonEmptyExpr(nextLvl)})::int` : `COUNT(*)::int`;
+      const distRes = await client.query(`
+        WITH per_container AS (
+          SELECT ${lvlExpr} AS c_code, ${countExpr} AS cnt
+          FROM codes
+          WHERE ${where} AND ${lvlExpr} IS NOT NULL
+          GROUP BY ${lvlExpr}
+        ),
+        freq AS (
+          SELECT cnt, COUNT(*)::int AS freq_cnt
+          FROM per_container
+          GROUP BY cnt
+          ORDER BY freq_cnt DESC, cnt DESC
+          LIMIT 1
+        )
+        SELECT
+          (SELECT cnt FROM freq) AS expected_count,
+          (SELECT freq_cnt FROM freq) AS expected_freq,
+          (SELECT COUNT(*)::int FROM per_container) AS total_containers,
+          (SELECT COUNT(*)::int FROM per_container WHERE cnt <> (SELECT cnt FROM freq)) AS irregular_count;
+      `, params);
+      const meta = distRes.rows[0];
+      const expectedCount = Number(meta?.expected_count || 0);
+      const expectedFreq = Number(meta?.expected_freq || 0);
+      const totalContainers = Number(meta?.total_containers || 0);
+      const irregularCount = Number(meta?.irregular_count || 0);
+      if (expectedCount > 0 && expectedFreq >= 2 && irregularCount > 0) {
+        const samplesParams = [...params, expectedCount];
+        const expectedParamIdx = samplesParams.length;
+        const samplesRes = await client.query(`
+          WITH per_container AS (
+            SELECT ${lvlExpr} AS c_code, ${countExpr} AS cnt
+            FROM codes
+            WHERE ${where} AND ${lvlExpr} IS NOT NULL
+            GROUP BY ${lvlExpr}
+          )
+          SELECT c_code, cnt
+          FROM per_container
+          WHERE cnt <> $${expectedParamIdx}
+          ORDER BY cnt ASC, c_code ASC
+          LIMIT 50;
+        `, samplesParams);
+        irregularGroups.push({
+          level: lvl,
+          expectedCount,
+          totalContainers,
+          irregularCount,
+          samples: samplesRes.rows.map((r) => ({
+            code: r.c_code,
+            count: Number(r.cnt || 0),
+            expectedCount
+          }))
+        });
+      }
+    }
+    await client.end();
+    res.json({
+      availableLevels: levels,
+      activeRootLevel,
+      totalCodes,
+      unaggregatedCount: aggStats.unaggregatedCount,
+      levelStats: aggStats.stats,
+      nodes,
+      totalNodesCount,
+      anomalies: {
+        unaggregatedCount: aggStats.unaggregatedCount,
+        partialLevels,
+        irregularGroups
+      }
+    });
+  } catch (err) {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+      }
+    }
+    console.error("[/api/aggregation/overview] Error:", err);
+    res.status(500).send(err?.message || "Aggregation overview error");
+  }
+});
+app.post("/api/aggregation/children", async (req, res) => {
+  const { connection, selectedGtin, startDate, endDate, dateField, status, parentLevel, parentCode, ancestors } = req.body;
+  if (!connection || !parentLevel || !parentCode)
+    return res.status(400).send("Missing parameters");
+  if (dateField && !validateDateField(dateField))
+    return res.status(400).send("Invalid dateField");
+  let client;
+  try {
+    client = await connectWithFallback(connection);
+    const { levels, colSet } = await getAggregationSchema(client);
+    if (!levels.includes(parentLevel)) {
+      await client.end();
+      return res.status(400).send(`\u0423\u0440\u043E\u0432\u0435\u043D\u044C ${parentLevel} \u043E\u0442\u0441\u0443\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u0432 \u0442\u0430\u0431\u043B\u0438\u0446\u0435 codes`);
+    }
+    const { where: baseWhere, params } = buildCodesWhere({ selectedGtin, startDate, endDate, dateField, status });
+    let where = baseWhere;
+    params.push(parentCode);
+    where += ` AND ${nonEmptyExpr(parentLevel)} = $${params.length}`;
+    if (ancestors && typeof ancestors === "object") {
+      for (const lvl of levels) {
+        if (lvl !== parentLevel && ancestors[lvl]) {
+          params.push(ancestors[lvl]);
+          where += ` AND ${nonEmptyExpr(lvl)} = $${params.length}`;
+        }
+      }
+    }
+    let nextLevel = getNextLevel(levels, parentLevel);
+    while (nextLevel !== "code") {
+      const checkRes = await client.query(
+        `SELECT COUNT(*) FILTER (WHERE ${nonEmptyExpr(nextLevel)} IS NOT NULL)::int AS cnt FROM codes WHERE ${where};`,
+        params
+      );
+      if (Number(checkRes.rows[0]?.cnt || 0) > 0) {
+        break;
+      }
+      nextLevel = getNextLevel(levels, nextLevel);
+    }
+    if (nextLevel === "code") {
+      const leaves = await queryLeafRecords(client, { where, params, colSet, limit: 2e3 });
+      const totalRes = await client.query(`SELECT COUNT(*)::int AS total FROM codes WHERE ${where};`, params);
+      await client.end();
+      return res.json({
+        childLevel: "code",
+        nodes: [],
+        leaves,
+        totalCount: Number(totalRes.rows[0]?.total || leaves.length)
+      });
+    }
+    const grandChildLevel = getNextLevel(levels, nextLevel);
+    const nodes = await queryContainerNodes(client, {
+      where,
+      params,
+      level: nextLevel,
+      childLevel: grandChildLevel,
+      colSet,
+      limit: 1e3
+    });
+    const directRes = await client.query(
+      `SELECT COUNT(*)::int AS cnt FROM codes WHERE ${where} AND ${nonEmptyExpr(nextLevel)} IS NULL;`,
+      params
+    );
+    const directLeavesCount = Number(directRes.rows[0]?.cnt || 0);
+    let directLeaves = [];
+    if (directLeavesCount > 0) {
+      directLeaves = await queryLeafRecords(client, {
+        where: `${where} AND ${nonEmptyExpr(nextLevel)} IS NULL`,
+        params,
+        colSet,
+        limit: 500
+      });
+    }
+    await client.end();
+    return res.json({
+      childLevel: nextLevel,
+      nodes,
+      leaves: directLeaves,
+      totalCount: nodes.length
+    });
+  } catch (err) {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+      }
+    }
+    console.error("[/api/aggregation/children] Error:", err);
+    res.status(500).send(err?.message || "Aggregation children error");
+  }
+});
+app.post("/api/aggregation/search", async (req, res) => {
+  const { connection, query } = req.body;
+  const trimmed = typeof query === "string" ? query.trim() : "";
+  if (!connection || !trimmed)
+    return res.status(400).send("Missing connection or query");
+  let client;
+  try {
+    client = await connectWithFallback(connection);
+    const { levels, colSet } = await getAggregationSchema(client);
+    let matchedLevel = null;
+    let matchedValue = null;
+    let exactMatch = true;
+    for (const lvl of levels) {
+      const r = await client.query(
+        `SELECT ${nonEmptyExpr(lvl)} AS val FROM codes WHERE ${nonEmptyExpr(lvl)} = $1 LIMIT 1;`,
+        [trimmed]
+      );
+      if (r.rows.length > 0) {
+        matchedLevel = lvl;
+        matchedValue = r.rows[0].val;
+        break;
+      }
+    }
+    if (!matchedLevel) {
+      const r = await client.query(`SELECT code AS val FROM codes WHERE code = $1 LIMIT 1;`, [trimmed]);
+      if (r.rows.length > 0) {
+        matchedLevel = "code";
+        matchedValue = r.rows[0].val;
+      }
+    }
+    if (!matchedLevel) {
+      exactMatch = false;
+      const matches = [];
+      for (const lvl of levels) {
+        const r = await client.query(
+          `SELECT ${nonEmptyExpr(lvl)} AS val, COUNT(*)::int AS items_count
+           FROM codes
+           WHERE ${nonEmptyExpr(lvl)} ILIKE $1
+           GROUP BY ${nonEmptyExpr(lvl)}
+           LIMIT 10;`,
+          [`%${trimmed}%`]
+        );
+        for (const row of r.rows) {
+          matches.push({ level: lvl, value: row.val, itemsCount: Number(row.items_count || 0) });
+        }
+      }
+      if (matches.length < 15) {
+        const r = await client.query(
+          `SELECT code AS val FROM codes WHERE code ILIKE $1 LIMIT ${15 - matches.length};`,
+          [`%${trimmed}%`]
+        );
+        for (const row of r.rows) {
+          matches.push({ level: "code", value: row.val, itemsCount: 1 });
+        }
+      }
+      if (matches.length === 0) {
+        await client.end();
+        return res.json({ found: false, availableLevels: levels, matches: [] });
+      }
+      if (matches.length > 1) {
+        await client.end();
+        return res.json({ found: true, exactMatch: false, availableLevels: levels, matches });
+      }
+      matchedLevel = matches[0].level;
+      matchedValue = matches[0].value;
+    }
+    const chainCols = ["code", ...levels].map((c) => `${nonEmptyExpr(c)} AS ${escapeIdentifier2(c)}`).join(", ");
+    const whereClause = matchedLevel === "code" ? `code = $1` : `${nonEmptyExpr(matchedLevel)} = $1`;
+    const sampleRes = await client.query(`SELECT ${chainCols} FROM codes WHERE ${whereClause} LIMIT 1;`, [matchedValue]);
+    const sample = sampleRes.rows[0] || {};
+    const chain = {
+      sscc1: levels.includes("sscc1") ? sample.sscc1 || null : null,
+      sscc: levels.includes("sscc") ? sample.sscc || null : null,
+      grcode: levels.includes("grcode") ? sample.grcode || null : null,
+      code: matchedLevel === "code" ? matchedValue : null
+    };
+    if (matchedLevel === "sscc1") {
+      chain.sscc = null;
+      chain.grcode = null;
+    } else if (matchedLevel === "sscc") {
+      chain.grcode = null;
+    }
+    if (matchedLevel === "code") {
+      const leaves2 = await queryLeafRecords(client, { where: "code = $1", params: [matchedValue], colSet, limit: 10 });
+      await client.end();
+      return res.json({
+        found: true,
+        exactMatch,
+        matchedLevel: "code",
+        matchedValue,
+        availableLevels: levels,
+        chain,
+        itemsCount: leaves2.length,
+        childLevel: null,
+        childCount: 0,
+        children: [],
+        leaves: leaves2
+      });
+    }
+    const totalRes = await client.query(`SELECT COUNT(*)::int AS total FROM codes WHERE ${whereClause};`, [matchedValue]);
+    const itemsCount = Number(totalRes.rows[0]?.total || 0);
+    let nextLevel = getNextLevel(levels, matchedLevel);
+    while (nextLevel !== "code") {
+      const checkRes = await client.query(
+        `SELECT COUNT(*) FILTER (WHERE ${nonEmptyExpr(nextLevel)} IS NOT NULL)::int AS cnt FROM codes WHERE ${whereClause};`,
+        [matchedValue]
+      );
+      if (Number(checkRes.rows[0]?.cnt || 0) > 0)
+        break;
+      nextLevel = getNextLevel(levels, nextLevel);
+    }
+    let children = [];
+    let leaves = [];
+    if (nextLevel === "code") {
+      leaves = await queryLeafRecords(client, { where: whereClause, params: [matchedValue], colSet, limit: 2e3 });
+    } else {
+      const grandChild = getNextLevel(levels, nextLevel);
+      children = await queryContainerNodes(client, {
+        where: whereClause,
+        params: [matchedValue],
+        level: nextLevel,
+        childLevel: grandChild,
+        colSet,
+        limit: 1e3
+      });
+    }
+    await client.end();
+    return res.json({
+      found: true,
+      exactMatch,
+      matchedLevel,
+      matchedValue,
+      availableLevels: levels,
+      chain,
+      itemsCount,
+      childLevel: nextLevel,
+      childCount: nextLevel === "code" ? leaves.length : children.length,
+      children,
+      leaves
+    });
+  } catch (err) {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+      }
+    }
+    console.error("[/api/aggregation/search] Error:", err);
+    res.status(500).send(err?.message || "Aggregation search error");
+  }
+});
+app.post("/api/aggregation/export", async (req, res) => {
+  const { connection, selectedGtin, startDate, endDate, dateField, status, filterLevel, filterCode, anomalyType, childLevel, parentLevel } = req.body;
+  if (!connection)
+    return res.status(400).send("Missing connection");
+  if (dateField && !validateDateField(dateField))
+    return res.status(400).send("Invalid dateField");
+  let client;
+  try {
+    client = await connectWithFallback(connection);
+    const { levels, colSet } = await getAggregationSchema(client);
+    const { where: baseWhere, params } = buildCodesWhere({ selectedGtin, startDate, endDate, dateField, status });
+    let where = baseWhere;
+    if (filterLevel && filterCode) {
+      if (filterLevel === "code") {
+        params.push(filterCode);
+        where += ` AND code = $${params.length}`;
+      } else if (levels.includes(filterLevel)) {
+        params.push(filterCode);
+        where += ` AND ${nonEmptyExpr(filterLevel)} = $${params.length}`;
+      } else {
+        await client.end();
+        return res.status(400).send(`\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0443\u0440\u043E\u0432\u0435\u043D\u044C ${filterLevel}`);
+      }
+    } else if (anomalyType === "unaggregated" && levels.length > 0) {
+      const unaggCond = levels.map((l) => `${nonEmptyExpr(l)} IS NULL`).join(" AND ");
+      where += ` AND (${unaggCond})`;
+    } else if (anomalyType === "partial" && childLevel && parentLevel && levels.includes(childLevel) && levels.includes(parentLevel)) {
+      where += ` AND ${nonEmptyExpr(childLevel)} IS NOT NULL AND ${nonEmptyExpr(parentLevel)} IS NULL`;
+    }
+    const desiredCols = ["sscc1", "sscc", "grcode", "code", "status", "production_date", "dtime_ins", "dtime_grcode", "dtime_sscc", "dtime_sscc1"];
+    const existingCols = desiredCols.filter((c) => colSet.has(c));
+    const selectSql = existingCols.map(escapeIdentifier2).join(", ");
+    const orderParts = levels.map((l) => `${escapeIdentifier2(l)} ASC NULLS LAST`);
+    if (colSet.has("id"))
+      orderParts.push("id ASC");
+    const sql = `SELECT ${selectSql} FROM codes WHERE ${where} ORDER BY ${orderParts.join(", ")};`;
+    const result = await client.query(sql, params);
+    await client.end();
+    res.json(result.rows);
+  } catch (err) {
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+      }
+    }
+    console.error("[/api/aggregation/export] Error:", err);
+    res.status(500).send(err?.message || "Aggregation export error");
   }
 });
 app.post("/api/full", async (req, res) => {
@@ -30143,8 +30704,8 @@ app.post("/api/settings", async (req, res) => {
 });
 var CURRENT_VERSION = "2.1.1";
 try {
-  if ("2.1.18") {
-    CURRENT_VERSION = "2.1.18";
+  if ("2.1.19") {
+    CURRENT_VERSION = "2.1.19";
   } else {
     const pkgPath = import_path.default.join(process.cwd(), "package.json");
     if (import_fs.default.existsSync(pkgPath)) {

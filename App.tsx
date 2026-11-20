@@ -7,9 +7,10 @@ import ProductsManager from './components/ProductsManager';
 import FieldLabelsEditor from './components/FieldLabelsEditor';
 import PrintDashboard from './components/PrintDashboard';
 import MaintenanceDashboard from './components/MaintenanceDashboard';
+import AggregationDashboard from './components/AggregationDashboard';
 import HelpTour from './components/HelpTour';
 import UpdateBanner from './components/UpdateBanner';
-import { ViewMode, DbConnection, Product, CodeField } from './types';
+import { ViewMode, DbConnection, Product, CodeField, AggregationFilterPreset } from './types';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ViewMode>(ViewMode.DASHBOARD);
@@ -18,7 +19,12 @@ const App: React.FC = () => {
   const [fieldLabels, setFieldLabels] = useState<Record<string, string>>({});
   const [discoveredColumns, setDiscoveredColumns] = useState<CodeField[]>([]);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [aggregationPreset, setAggregationPreset] = useState<{ data: AggregationFilterPreset; version: number } | null>(null);
 
+  const handleOpenAggregation = useCallback((data: AggregationFilterPreset) => {
+    setAggregationPreset(prev => ({ data, version: (prev?.version ?? 0) + 1 }));
+    setActiveView(ViewMode.AGGREGATION);
+  }, []);
   const handleColumnsLoaded = useCallback((cols: CodeField[]) => {
     setDiscoveredColumns(prev => {
       const map = new Map<string, CodeField>();
@@ -165,6 +171,15 @@ const App: React.FC = () => {
               products={products}
               fieldLabels={fieldLabels}
               onColumnsLoaded={handleColumnsLoaded}
+              onOpenAggregation={handleOpenAggregation}
+            />
+          </div>
+          <div style={{ display: activeView === ViewMode.AGGREGATION ? 'block' : 'none' }}>
+            <AggregationDashboard
+              connections={connections}
+              products={products}
+              fieldLabels={fieldLabels}
+              preset={aggregationPreset}
             />
           </div>
           <div style={{ display: activeView === ViewMode.CONNECTIONS ? 'block' : 'none' }}>

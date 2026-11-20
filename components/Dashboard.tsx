@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { DbConnection, Product, QueryResult, DateField, ALL_CODE_FIELDS, CodeField } from '../types';
+import { DbConnection, Product, QueryResult, DateField, ALL_CODE_FIELDS, CodeField, SummaryAggregationInfo, AggregationFilterPreset } from '../types';
 import { generateSqlQuery, exportToCsv, exportResultsToExcel, exportToExcel } from '../services/dbService';
 
 interface DashboardProps {
@@ -8,9 +8,16 @@ interface DashboardProps {
   products: Product[];
   fieldLabels: Record<string, string>;
   onColumnsLoaded?: (columns: CodeField[]) => void;
+  onOpenAggregation?: (preset: AggregationFilterPreset) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabels = {}, onColumnsLoaded }) => {
+const AGG_LEVEL_TITLES: Record<string, string> = {
+  sscc1: 'Уровень 3 (sscc1)',
+  sscc: 'Палеты (sscc)',
+  grcode: 'Коробы (grcode)'
+};
+
+const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabels = {}, onColumnsLoaded, onOpenAggregation }) => {
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [selectedProductGtin, setSelectedProductGtin] = useState<string>('all');
   const [dateField, setDateField] = useState<DateField>('production_date');
@@ -129,6 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
   const [results, setResults] = useState<QueryResult[]>([]);
   const [lastQuery, setLastQuery] = useState<string>('');
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [aggregationInfo, setAggregationInfo] = useState<SummaryAggregationInfo | null>(null);
 
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const endInputRef = useRef<HTMLInputElement | null>(null);
@@ -177,7 +185,8 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
         throw new Error(errText || 'Server error');
       }
 
-      const respJson = await resp.json() as { rows: Array<{ gtin: string; count: number }>, totalCount: number, prefixCount: number, nonPrefixCount: number };
+      const respJson = await resp.json() as { rows: Array<{ gtin: string; count: number }>, totalCount: number, prefixCount: number, nonPrefixCount: number, aggregation?: SummaryAggregationInfo | null };
+      setAggregationInfo(respJson.aggregation && respJson.aggregation.levels.length > 0 ? respJson.aggregation : null);
       const data = respJson.rows || [];
       let mappedResults: QueryResult[] = [];
 
@@ -570,6 +579,49 @@ const Dashboard: React.FC<DashboardProps> = ({ connections, products, fieldLabel
           </label>
         </div>
       </div>
+
+      {/* Aggregation summary */}
+      {aggregationInfo && results.length > 0 && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-fadeIn" data-tour="dashboard-aggregation">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 className="font-bold text-gray-700">Агрегация (по выбранным фильтрам)</h3>
+            {onOpenAggregation && (
+              <button
+                type="button"
+                onClick={() => onOpenAggregation({
+                  dbId: selectedDb,
+                  selectedProductGtin,
+                  dateField,
+                  startDate,
+                  endDate,
+                  isRange,
+                  selectedStatus,
+                  customStatus
+                })}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm active:scale-95"
+              >
+                Открыть дерево агрегации →
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {aggregationInfo.stats.map(s => (
+              <div key={s.level} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                <div className="text-[11px] uppercase font-bold text-gray-400">{fieldLabels[s.level] || AGG_LEVEL_TITLES[s.level] || s.level}</div>
+                <div className="text-2xl font-bold text-indigo-600">{s.distinctCount.toLocaleString()}</div>
+                <div className="text-xs text-gray-500">штучек внутри: {s.itemsCount.toLocaleString()}</div>
+              </div>
+            ))}
+            <div className={`border rounded-lg p-3 ${aggregationInfo.unaggregatedCount > 0 ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+              <div className="text-[11px] uppercase font-bold text-gray-400">Не агрегировано</div>
+              <div className={`text-2xl font-bold ${aggregationInfo.unaggregatedCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                {aggregationInfo.unaggregatedCount.toLocaleString()}
+              </div>
+              <div className="text-xs text-gray-500">штучек без групповых кодов</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Results Table */}
       {results.length > 0 ? (

@@ -242,7 +242,7 @@ const MaintenanceDashboard: React.FC<MaintenanceDashboardProps> = ({ connections
         <h2 className="text-2xl font-bold">Обслуживание: Удаление кодов</h2>
       </div>
 
-      <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded-r-lg mb-6 shadow-sm">
+      <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded-r-lg mb-6 shadow-sm" data-tour="maintenance-warning">
         <div className="flex items-start gap-3">
           <span className="text-orange-500 text-xl font-bold">⚠️</span>
           <div>

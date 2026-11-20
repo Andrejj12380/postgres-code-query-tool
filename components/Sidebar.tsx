@@ -12,6 +12,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView, onOpenHelp }) => {
   const navItems = [
     { id: ViewMode.DASHBOARD, label: 'Поиск и Отчеты', icon: '📊' },
+    { id: ViewMode.AGGREGATION, label: 'Агрегация', icon: '🗂️' },
     { id: ViewMode.PRINT, label: 'Печать', icon: '🖨️' },
     { id: ViewMode.CONNECTIONS, label: 'Базы данных', icon: '🔌' },
     { id: ViewMode.PRODUCTS, label: 'Продукция', icon: '📦' },
